@@ -1,0 +1,37 @@
+---
+title: "00_array_summary"
+author: "Puvvula"
+date: "2023-06-30"
+output: pdf_document
+---
+
+```{r}
+library(pacman)
+pacman::p_load(tidyverse, janitor)
+path <- "~/Documents/methylation_pilot/"
+```
+
+read array information
+```{r}
+array_info <- read_csv(paste0(path, "meth_pheno.csv")) |>
+  clean_names() |>
+  mutate_at(vars(1:10), as.factor)
+
+n_distinct(array_info$participant_id)
+```
+
+```{r}
+# Count observations per participant and sample type
+df_count <- array_info |>
+  group_by(participant_id, sample_type, sentrix_id) |>
+  summarize(count = n()) |>
+  ungroup() |>
+  complete(participant_id, sample_type, fill = list(count = 0)) |>
+  mutate(observation_indicator = ifelse(count > 0, "Present", "Absent"))
+
+# Create the heatmap using ggplot2
+ggplot(df_count, aes(x = sample_type, y = participant_id, color=sentrix_id)) +
+  labs(x = "Sample Type", y = "Participant ID") +
+  theme_minimal()
+```
+

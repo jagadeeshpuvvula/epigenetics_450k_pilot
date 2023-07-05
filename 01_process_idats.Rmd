@@ -1,0 +1,166 @@
+---
+title: "01_process_idats"
+author: "Puvvula"
+date: "2023-06-30"
+output: pdf_document
+---
+
+```{r}
+library(pacman)
+pacman::p_load(tidyverse, janitor, stringi, UpSetR)
+pheno <- "~/Documents/methylation_pilot/"
+idats<- "~/Documents/methylation_pilot/idat_files/"
+```
+
+#read chip and de-identified subject info
+```{r}
+pheno <- read_csv(paste0(pheno, "meth_pheno.csv")) |>
+  clean_names() |>
+  mutate(gsm_id = paste(sentrix_id, sentrix_position, sep = "_")) 
+
+unique_counts <- pheno |>
+  group_by(sample_type) |>
+  summarise(unique_participants = n_distinct(participant_id),
+            n_chips = n_distinct(sentrix_id))
+```
+
+#visualize chip info
+```{r}
+# Generate the heatmap using ggplot2
+cb_palette <- c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7",
+                   "#999999", "#A69F00", "#6AB4E9", "#109E73", "#E0E442", "#4072B2", "#B55E00", "#EC79A7")
+
+ggplot(pheno, aes(x = sample_type, y = participant_id, fill = factor(sentrix_id))) +
+  geom_tile(width = 0.5, height = 0.8,) +
+  scale_x_discrete(expand = c(0, 0))+
+  scale_fill_manual(values = cb_palette)+
+  labs(x = "Sample Type", y = "Subject ID", fill = "Sentry ID") +
+  theme_minimal()+
+  guides(fill = "none")
+```
+
+#================= Mehtylation data ======================#
+```{r}
+pacman::p_load(minfi, ENmix, IlluminaHumanMethylation450kmanifest, 
+               IlluminaHumanMethylation450kanno.ilmn12.hg19, FlowSorted.Blood.450k, 
+               sva, wateRmelon)
+```
+
+#read idats
+```{r}
+#select one type of sample to process
+pheno_by_tiss <- pheno |> filter(sample_type == "CBMC")
+
+#read idats
+idat_files<-  paste0(idats, pheno_by_tiss$gsm_id)
+rgset = read.metharray(basenames=idat_files)
+
+#snp info
+snp<- getSnpInfo(rgset, snpAnno = NULL)
+#find a way to drop snps
+
+# get the 450k annotation data
+ann450k <- getAnnotation(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+
+#p-value set
+detP <- detectionP(rgset)
+```
+
+#different probe removal method - not using this time
+```{r}
+# https://doi.org/10.1016/j.envint.2023.107774
+#Failed probes based on Illumina’s recommendations were removed (detection p-value > 0.01 in 5 % of individuals or more)
+# 4,884 probes
+#probes_to_remove <- rowSums(detP > 1e-7) > (0.05*ncol(bmiq_normal))
+#table(probes_to_remove)
+
+#dropping 4,884 probes
+#bmiq_normalFlt_1 <- bmiq_normal[!probes_to_remove,]
+```
+
+#remove probes by p-value threshold
+```{r}
+# Drop probes if at least one subject with high detection p-value
+probes_to_remove <- rowSums(detP > 1e-7) > 0
+table(probes_to_remove)
+
+#dropping 13,413 probes based on p-value threshold
+rgset_f1 <- rgset[!probes_to_remove, ]
+
+# Drop samples if 5% of probes are above the p-value threshold
+samples_to_remove <- colSums(detP > 1e-7) > (0.05 * nrow(rgset))
+table(samples_to_remove)
+
+# Remove samples exceeding the threshold from the methylation data
+rgset_f2 <- rgset_f1[!samples_to_remove, ]
+```
+
+#removing probes at sex chromosomes, SNPs, and cross-hybridizing probes
+```{r}
+mset <- preprocessNoob(rgset_f2)
+GRset <- mapToGenome(mset)
+
+#drop snp
+GRset_2 <- dropLociWithSnps(GRset, snps=c("SBE","CpG"), maf=0)
+
+# remove sex chromosomes
+keep <- !(rownames(GRset_2) %in% ann450k$Name[ann450k$chr %in% c("chrX","chrY")])
+table(keep)
+
+#drop 11,458 probes
+GRset_3 <- GRset_2[keep,]
+
+
+# cross-hybrid probe list from: https://www.tandfonline.com/doi/full/10.4161/epi.23470
+cross_hyb_probes <- read_csv(url("https://epigen.ccm.sickkids.ca/sample-report/data/quality_control/cross_reactive_probes.csv"),
+                             col_names = c("cg_site"))
+
+GRset_4 <- GRset_3[!(rownames(GRset_3) %in% cross_hyb_probes$X1), ]
+```
+
+
+#Methylset prep: standardization, probe, dye, and batch correction
+```{r}
+#background correction and dye bias normalization
+mset <- preprocessNoob(rgset)
+densityPlot(getBeta(mset), sampGroups = pheno$sentrix_id, legend = F, main="preprocessNoob")
+
+#Beta MIxture Quantile dilation (BMIQ; wateRmelon) was applied to correct probe design bias
+#beta range: 0.002199932 0.999835795 & median = 0.65
+bmiq_normal <- BMIQ(mset)
+densityPlot(bmiq_normal, sampGroups = pheno$sentrix_id, legend = F, main="preprocessNoob + BMIQ")
+
+#combat batch correction + BMIQ - over adjusting: beta range -0.3956759  1.4982748
+#batch correction alone: beta range = -0.3920262  1.4166083
+#batchCorrectedData <- ComBat(dat = getBeta(MSet), batch = pheno_by_tiss$sentrix_id)
+#qc plot
+#densityPlot(batchCorrectedData, sampGroups = pheno$sentrix_id, legend = F)
+
+#check order of samples
+matches <- map_lgl(pheno_by_tiss$gsm_id, ~ .x %in% colnames(bmiq_normal))
+```
+
+
+
+
+
+#generating genomic methyl and genomic ratio set
+```{r}
+genomic_meth_set<- mapToGenome(MSet)
+annotation<-getAnnotation(genomic_meth_set) 
+annotation=annotation[intersect(rownames(batchCorrectedData),rownames(annotation)),]
+#sex prediction
+sex_prediction <- getSex(genomic_meth_set)
+sex_pred<- tibble(gsm_id= row.names(sex_prediction), pred_sex= sex_prediction$predictedSex)
+
+genomic_ratio_set<- ratioConvert(genomic_meth_set)
+
+manifest_set <- getManifest(MSet)
+
+SNPs_probes<- getSnpBeta(rgset)
+```
+
+#reference based cell count estimation from rgset
+```{r}
+minfi.LC<- estimateCellCounts(rgset, compositeCellType="Blood")
+```
