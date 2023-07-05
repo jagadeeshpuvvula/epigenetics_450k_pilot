@@ -1,0 +1,17 @@
+---
+title: "02_probe_wise_ewas"
+author: "Puvvula"
+date: "2023-07-05"
+output: pdf_document
+---
+
+```{r}
+library(pacman)
+pacman::p_load(tidyverse, janitor)
+processed<- "~/Documents/methylation_pilot/processed/"
+```
+
+```{r}
+load(paste0(processed, "cbmc_processed.rda"))
+```
+

@@ -10,6 +10,7 @@ library(pacman)
 pacman::p_load(tidyverse, janitor, stringi, UpSetR)
 pheno <- "~/Documents/methylation_pilot/"
 idats<- "~/Documents/methylation_pilot/idat_files/"
+processed<- "~/Documents/methylation_pilot/processed/"
 ```
 
 #read chip and de-identified subject info
@@ -43,7 +44,7 @@ ggplot(pheno, aes(x = sample_type, y = participant_id, fill = factor(sentrix_id)
 ```{r}
 pacman::p_load(minfi, ENmix, IlluminaHumanMethylation450kmanifest, 
                IlluminaHumanMethylation450kanno.ilmn12.hg19, FlowSorted.Blood.450k, 
-               sva, wateRmelon)
+               sva, wateRmelon, RColorBrewer)
 ```
 
 #read idats
@@ -51,116 +52,177 @@ pacman::p_load(minfi, ENmix, IlluminaHumanMethylation450kmanifest,
 #select one type of sample to process
 pheno_by_tiss <- pheno |> filter(sample_type == "CBMC")
 
-#read idats
+#idat file names
 idat_files<-  paste0(idats, pheno_by_tiss$gsm_id)
-rgset = read.metharray(basenames=idat_files)
-
-#snp info
-snp<- getSnpInfo(rgset, snpAnno = NULL)
-#find a way to drop snps
 
 # get the 450k annotation data
 ann450k <- getAnnotation(IlluminaHumanMethylation450kanno.ilmn12.hg19)
 
-#p-value set
-detP <- detectionP(rgset)
+#read raw idats
+rgSet = read.metharray(basenames=idat_files)
 ```
 
-#different probe removal method - not using this time
+#quality check
 ```{r}
-# https://doi.org/10.1016/j.envint.2023.107774
-#Failed probes based on Illumina’s recommendations were removed (detection p-value > 0.01 in 5 % of individuals or more)
-# 4,884 probes
-#probes_to_remove <- rowSums(detP > 1e-7) > (0.05*ncol(bmiq_normal))
-#table(probes_to_remove)
+# calculate the detection p-values
+detP <- detectionP(rgSet)
 
-#dropping 4,884 probes
-#bmiq_normalFlt_1 <- bmiq_normal[!probes_to_remove,]
+# examine mean detection p-values across all samples to identify any failed samples
+pal <- brewer.pal(8,"Dark2")
+barplot(colMeans(detP), col=pal[factor(pheno_by_tiss$sentrix_id)], las=2, 
+        cex.names=0.8, ylab="Mean detection p-values")
+
 ```
 
-#remove probes by p-value threshold
+#minfi qcReport
 ```{r}
-# Drop probes if at least one subject with high detection p-value
-probes_to_remove <- rowSums(detP > 1e-7) > 0
-table(probes_to_remove)
+#get minfi qc report
+qcReport(rgSet, sampNames=pheno_by_tiss$sentrix_id, sampGroups=pheno_by_tiss$sentrix_id, 
+         pdf="qcReport.pdf")
+```
 
-#dropping 13,413 probes based on p-value threshold
-rgset_f1 <- rgset[!probes_to_remove, ]
-
+# remove poor quality samples
+```{r}
 # Drop samples if 5% of probes are above the p-value threshold
-samples_to_remove <- colSums(detP > 1e-7) > (0.05 * nrow(rgset))
+samples_to_remove <- colSums(detP > 1e-7) > (0.05 * nrow(rgSet))
 table(samples_to_remove)
 
 # Remove samples exceeding the threshold from the methylation data
-rgset_f2 <- rgset_f1[!samples_to_remove, ]
+rgset_f2 <- rgSet[!samples_to_remove, ]
 ```
 
-#removing probes at sex chromosomes, SNPs, and cross-hybridizing probes
+#generate methyl and genomic ratio set
 ```{r}
-mset <- preprocessNoob(rgset_f2)
-GRset <- mapToGenome(mset)
+# normalize the data; this results in a GenomicRatioSet object
+mSetSq_noob <- preprocessNoob(rgset_f2) 
+mSetSq_bmiq <- BMIQ(mSetSq_noob)
 
-#drop snp
-GRset_2 <- dropLociWithSnps(GRset, snps=c("SBE","CpG"), maf=0)
+#convert preprocessed +BMIQ object to a genomic ratio set
+mSetSq_v1<- makeGenomicRatioSetFromMatrix(mSetSq_bmiq)
 
-# remove sex chromosomes
-keep <- !(rownames(GRset_2) %in% ann450k$Name[ann450k$chr %in% c("chrX","chrY")])
+# create a MethylSet object from the raw data for plotting
+mSetRaw <- preprocessRaw(rgset_f2)
+```
+
+#multi dimensional scaling plots
+#principle components analysis and are an unsupervised method for looking at the similarities and differences between the various samples. Samples that are more similar to each other should cluster together, and samples that are very different should be further apart on the plot. Dimension one (or principle component one) captures the greatest source of variation in the data, dimension two captures the second greatest source of variation in the data and so on.  Colouring the data points or labels by known factors of interest can often highlight exactly what the greatest sources of variation are in the data. It is also possible to use MDS plots to decipher sample mix-ups.
+```{r}
+#change dim parameter to select different PCs from PCA
+par(mfrow=c(1,3))
+plotMDS(getM(mSetSq), top=1000, gene.selection="common", 
+        col=pal[factor(pheno_by_tiss$sentrix_id)], dim=c(1,3))
+
+plotMDS(getM(mSetSq), top=1000, gene.selection="common", 
+        col=pal[factor(pheno_by_tiss$sentrix_id)], dim=c(2,3))
+
+plotMDS(getM(mSetSq), top=1000, gene.selection="common", 
+        col=pal[factor(pheno_by_tiss$sentrix_id)], dim=c(3,4))
+```
+
+#removing probes with poor quality using a p-value threshold
+```{r}
+# ensure probes are in the same order in the mSetSq and detP objects
+detP <- detP[match(featureNames(mSetSq_v1),rownames(detP)),] 
+
+# remove any probes that have failed in one or more samples
+keep <- rowSums(detP < 1e-7) == ncol(mSetSq_v1) 
 table(keep)
 
-#drop 11,458 probes
-GRset_3 <- GRset_2[keep,]
+mSetSqFlt <- mSetSq_v1[keep,]
+dim(mSetSqFlt)
+```
 
+#remove probes on sex chromosome
+```{r}
+# if your data includes males and females, remove probes on the sex chromosomes
+keep <- !(featureNames(mSetSqFlt) %in% ann450k$Name[ann450k$chr %in% 
+                                                        c("chrX","chrY")])
+table(keep)
+mSetSqFlt <- mSetSqFlt[keep,]
+dim(mSetSqFlt)
+```
 
+# exclude cross reactive probes
 # cross-hybrid probe list from: https://www.tandfonline.com/doi/full/10.4161/epi.23470
-cross_hyb_probes <- read_csv(url("https://epigen.ccm.sickkids.ca/sample-report/data/quality_control/cross_reactive_probes.csv"),
-                             col_names = c("cg_site"))
-
-GRset_4 <- GRset_3[!(rownames(GRset_3) %in% cross_hyb_probes$X1), ]
-```
-
-
-#Methylset prep: standardization, probe, dye, and batch correction
 ```{r}
-#background correction and dye bias normalization
-mset <- preprocessNoob(rgset)
-densityPlot(getBeta(mset), sampGroups = pheno$sentrix_id, legend = F, main="preprocessNoob")
+xReactiveProbes <- read_csv(url("https://epigen.ccm.sickkids.ca/sample-report/data/quality_control/cross_reactive_probes.csv"),
+                             col_names = c("TargetID"))
 
-#Beta MIxture Quantile dilation (BMIQ; wateRmelon) was applied to correct probe design bias
-#beta range: 0.002199932 0.999835795 & median = 0.65
-bmiq_normal <- BMIQ(mset)
-densityPlot(bmiq_normal, sampGroups = pheno$sentrix_id, legend = F, main="preprocessNoob + BMIQ")
+keep <- !(rownames(mSetSqFlt) %in% xReactiveProbes$TargetID)
+table(keep)
 
-#combat batch correction + BMIQ - over adjusting: beta range -0.3956759  1.4982748
-#batch correction alone: beta range = -0.3920262  1.4166083
-#batchCorrectedData <- ComBat(dat = getBeta(MSet), batch = pheno_by_tiss$sentrix_id)
-#qc plot
-#densityPlot(batchCorrectedData, sampGroups = pheno$sentrix_id, legend = F)
-
-#check order of samples
-matches <- map_lgl(pheno_by_tiss$gsm_id, ~ .x %in% colnames(bmiq_normal))
+mSetSqFlt <- mSetSqFlt[keep,] 
+dim(mSetSqFlt)
 ```
 
-
-
-
-
-#generating genomic methyl and genomic ratio set
+# remove probes with SNPs at CpG site
 ```{r}
-genomic_meth_set<- mapToGenome(MSet)
-annotation<-getAnnotation(genomic_meth_set) 
-annotation=annotation[intersect(rownames(batchCorrectedData),rownames(annotation)),]
-#sex prediction
-sex_prediction <- getSex(genomic_meth_set)
-sex_pred<- tibble(gsm_id= row.names(sex_prediction), pred_sex= sex_prediction$predictedSex)
-
-genomic_ratio_set<- ratioConvert(genomic_meth_set)
-
-manifest_set <- getManifest(MSet)
-
-SNPs_probes<- getSnpBeta(rgset)
+mSetSqFlt <- dropLociWithSnps(mSetSqFlt)
+dim(mSetSqFlt)
 ```
 
-#reference based cell count estimation from rgset
+#checking the PCA plots again
 ```{r}
-minfi.LC<- estimateCellCounts(rgset, compositeCellType="Blood")
+#change dim parameter to select different PCs from PCA
+par(mfrow=c(1,3))
+plotMDS(getM(mSetSqFlt), top=1000, gene.selection="common", 
+        col=pal[factor(pheno_by_tiss$sentrix_id)], dim=c(1,3))
+
+plotMDS(getM(mSetSqFlt), top=1000, gene.selection="common", 
+        col=pal[factor(pheno_by_tiss$sentrix_id)], dim=c(2,3))
+
+plotMDS(getM(mSetSqFlt), top=1000, gene.selection="common", 
+        col=pal[factor(pheno_by_tiss$sentrix_id)], dim=c(3,4))
 ```
+
+#beta density plots
+```{r}
+par(mfrow=c(1,3))
+densityPlot(getBeta(mSetRaw), sampGroups = pheno$sentrix_id, legend = F, main="Raw methylset")
+densityPlot(getBeta(mSetSq_noob), sampGroups = pheno$sentrix_id, legend = F, main="Noob preprocessed \n+BMIQ methylset")
+densityPlot(getBeta(mSetSqFlt), sampGroups = pheno$sentrix_id, legend = F, main="Noob preprocessed + \nBMIQ +filtered methylset")
+```
+
+# calculate M-values and beta for statistical analysis
+```{r}
+mVals <- getM(mSetSqFlt)
+
+bVals <- getBeta(mSetSqFlt)
+
+```
+
+#plot m and beta values
+```{r}
+par(mfrow=c(1,2))
+densityPlot(bVals, sampGroups=pheno_by_tiss$sentrix_id, main="Beta values", 
+            legend=FALSE, xlab="Beta values")
+densityPlot(mVals, sampGroups=pheno_by_tiss$sentrix_id, main="M-values", 
+            legend=FALSE, xlab="M values")
+```
+
+
+#reference based cell count estimation from rgset for cord blood
+```{r}
+minfi.LC<- estimateCellCounts(rgSet,compositeCellType = "CordBlood", 
+                              meanplot=TRUE, cellTypes = c("CD8T","CD4T", "NK","Bcell","Mono","Gran","nRBC"),
+                              returnAll = FALSE, meanPlot = TRUE, verbose = TRUE, processMethod="preprocessNoob") |>
+  as.data.frame() |>
+  rownames_to_column("gsm_id")
+
+```
+
+#export cell type counts
+```{r}
+cbmc_pheno <- right_join(minfi.LC, pheno_by_tiss, by = "gsm_id")
+```
+
+#export rda objects for downstream analysis
+```{r}
+save(bVals, mVals, mSetSqFlt, cbmc_pheno, file = paste0(processed, "cbmc_processed.rda"))
+```
+
+
+#=======================================
+
+
+
