@@ -11,7 +11,81 @@ pacman::p_load(tidyverse, janitor)
 processed<- "~/Documents/methylation_pilot/processed/"
 ```
 
+#CMBC analysis
 ```{r}
 load(paste0(processed, "cbmc_processed.rda"))
+dat_chem_qn <- read_csv("~/Documents/methylation_pilot/exp_processed/chem_qn_fin.csv")
+
+dat_pheno <- cbmc_pheno |>
+  left_join(dat_chem_qn, by = "participant_id") |>
+  mutate(across(where(is.character), as.factor)) |>
+  filter(if_any(22:59, ~ !is.na(.))) |>
+  mutate(across(22:59, ~ log10(. + 0.000001)))
 ```
+
+#check sequence of gsm_id from preprocessed and pheno data
+```{r}
+bVals <- bVals[, match(dat_pheno$gsm_id, colnames(bVals)), drop = FALSE]
+
+setdiff(dat_pheno$gsm_id, colnames(bVals))
+```
+
+
+#load ewas specific libraries
+```{r}
+pacman::p_load(CpGassoc, qqman, IlluminaHumanMethylation450kanno.ilmn12.hg19, data.frame)
+```
+
+# for cpg annotation
+```{r}
+ann450k = getAnnotation(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+
+ann450kSub <- ann450k[match(rownames(bVals),ann450k$Name),
+                      c(1:4,12:19,24:ncol(ann450k))]
+```
+
+
+#ewas using M-values 
+#reduces heteroscedasticity to meet linear model assumptions, see [Du P, et al. BMC Bioinformatics. 2010](https://pubmed.ncbi.nlm.nih.gov/21118553/).
+```{r}
+nCpG = dim(bVals)[1]
+cbmc_ewas<- cpg.assoc(beta.val= bVals, 
+                      indep= dat_pheno$nap1, 
+                      covariates = as.data.frame(dat_pheno[, c("CD8T", "CD4T", "NK", "Bcell", "Mono", "Gran", "nRBC")]), 
+                      logit.transform = TRUE, 
+                      fdr.cutoff = 0.05, fdr.method = "BH")
+```
+
+#extract results
+```{r}
+plot(cbmc_ewas, main="QQ plot for association between methylation and Smoking\nadjusted for cell proportions")
+
+#extract lambda
+lambda <- function(p) median(qchisq(p, df=1, lower.tail=FALSE), na.rm=TRUE) / qchisq(0.5, df=1)
+lambda(cbmc_ewas$results[,3])
+
+datamanhat = cbind(cbmc_ewas$results, cbmc_ewas$coefficients)
+setDT(datamanhat)
+datamanhat = datamanhat[,.(probe_id=CPG.Labels,effect.size,std.error,P.value)]
+datamanhat = merge(datamanhat, manifest[,.(probe_id,chr,mapinfo)],by="probe_id")
+
+#' See where the top hits are
+datamanhat[order(P.value)][1:20]
+
+#' Volcano Plot-results2
+#' Bonferroni threshold
+#' 
+plot(-log10(P.value) ~ effect.size,
+     data=datamanhat,
+     xlab="M-value change",ylab="-log10(p-value)",
+     main="Volcano Plot\nadjusted for cell proportions")
+abline(h = -log10(0.05/(nCpG)), lty=1, col="red", lwd=2)
+```
+
+#annotation
+```{r}
+
+```
+
+
 
