@@ -1,0 +1,132 @@
+---
+title: "01.01_process_chem_covar"
+author: "Puvvula"
+date: "2023-07-06"
+output: pdf_document
+---
+
+```{r}
+library(pacman)
+pacman::p_load(tidyverse, janitor, haven, reshape2)
+chem_dat <- "~/Documents/methylation_pilot/exp_processed/"
+qn_dat<- "~/Documents/MWAS_home/Covariates/"
+pah_dir <- "~/Documents/MWAS_home/"
+```
+
+#pah cleaning
+```{r}
+pah<- read_sas(paste0(pah_dir, "PAH_update/pahmetabolitewide3.sas7bdat")) |>
+  select(-ends_with("concentrationcr"), -ends_with("BelowLOD"), -ends_with("units")) |>
+  mutate(fluo2 = if_else(FLUO2comment_code == 37, FLUO2LOD/sqrt(2), FLUO2concentration),
+         nap1 = if_else(NAP1comment_code == 37, NAP1LOD/sqrt(2), NAP1concentration),
+         nap2 = if_else(NAP2comment_code == 37, NAP2LOD/sqrt(2), NAP2concentration),
+         phen1 = if_else(PHEN1comment_code == 37, PHEN1LOD/sqrt(2), PHEN1concentration),
+         phen4 = if_else(PHEN4comment_code == 37, PHEN4LOD/sqrt(2), PHEN4concentration),
+         phen9 = if_else(PHEN9comment_code == 37, PHEN9LOD/sqrt(2), PHEN9concentration),
+         phen23 = if_else(PHEN23comment_code == 37, PHEN23LOD/sqrt(2), PHEN23concentration),
+         pyr1 = if_else(PYR1comment_code == 37, PYR1LOD/sqrt(2), PYR1concentration)) |>
+  select(c(1, 26:34)) |>
+  mutate_at(vars(3:10), ~ . / creatinine * 100)|>
+  mutate(sigma_lmwt_pah=fluo2+nap1+nap2+phen1+phen4+phen9+phen23)|>
+  select(-c(creatinine))
+```
+
+#read/join exposure and qn data
+```{r}
+dt_chem<- read_csv(paste0(chem_dat, "all_chem.csv")) |>
+  rename(participant_id=group) |>
+  select(c(1:30, 40,41))
+
+dat_chem<- dt_chem |> left_join(pah, by="participant_id")
+
+dt_survey <- read_sas(paste0(qn_dat, "analysis_data.sas7bdat")) |>
+  clean_names() 
+
+dt_survey<- dt_survey|>
+  mutate(across(where(is.character), na_if, ""))
+
+dat<- dat_chem |> left_join(dt_survey, by="participant_id")
+```
+
+```{r}
+#select variables of interest
+datFltr<- dat |> 
+  select(c(1:56, 49, 52,54, 61, 82, 149, 151, 153, 154, 157, 160:167, 193:195, 234, 237:239, 241, 242))|>
+  mutate(dist_majhw = case_when(
+    dist_majhw == "Less than 500 feet" | dist_majhw == "500 feet to 1/2 mile" | 
+      dist_majhw == "1/2 mile to 1 mile"~ "lt_1mile", 
+    dist_majhw == "More than 1 mile" ~ "gt_1mile"))|>
+    mutate(hh_inc = case_when(
+    hh_inc == "<$20,000" | hh_inc == "$20,000-$39,999"~ "bel_median", 
+    hh_inc == "$40,000-$59,999" | hh_inc == "$60,000-$79,999" | 
+      hh_inc == "$80,000-$99,999" | hh_inc == ">$100,000" ~ "abv_median"),
+    bmi = (pgwt_lb * 0.453592) / (((ht_ft * 30.48 + ht_in * 2.54) / 100) ^ 2),
+    mari_st = if_else(mari_st == "Married or living with a partner", "married", "not_married"),
+    mom_race = if_else(mom_race == "Non-Hispanic White", "white", "non-white")) |>
+  mutate(mom_edu = if_else(mom_edu == "Bachelor's degree" | 
+                                 mom_edu == "Master's degree or above", "bach-or-abv", "lt-bach")) |>
+  mutate(mom_edu = if_else(is.na(mom_edu), "lt-bach", mom_edu),
+         mari_st = if_else(is.na(mari_st), "not_married", mari_st),
+         hh_inc = if_else(is.na(hh_inc), "bel_median", hh_inc),
+         pgtob = if_else(is.na(pgtob), "No", pgtob),
+         bbquse = if_else(is.na(bbquse), "No", bbquse),
+         dist_majhw = if_else(is.na(dist_majhw), "lt_1mile", dist_majhw),
+         stovetype = if_else(is.na(stovetype), "Electric stove", stovetype),
+         mom_age = if_else(is.na(mom_age), median(mom_age, na.rm = TRUE), mom_age),
+         totpg = if_else(is.na(totpg), median(totpg, na.rm = TRUE), totpg),
+         bmi = if_else(is.na(bmi), median(bmi, na.rm = TRUE), bmi),
+         babywt_g = if_else(is.na(babywt_g), median(babywt_g, na.rm = TRUE), babywt_g),
+         babylength = if_else(is.na(babylength), median(babylength, na.rm = TRUE), babylength)) |>
+  select(-c(prevbfno, pgwt_lb, wt_lb, ht_in, ht_ft))
+	
+
+
+# Count NA values per variable
+na_counts <- datFltr |>
+  summarise(across(everything(), ~ sum(is.na(.)))) |>
+  gather(variable, count) 
+
+write_csv(datFltr, paste0(chem_dat, "chem_qn_fin.csv"))
+```
+
+# exposure summary and correlation matrix
+```{r}
+dat<- read_csv(paste0(chem_dat, "chem_qn_fin.csv"))
+
+summary <- dat %>%
+  gather(variable, value, -c(1, 31, 32, 42:76)) %>%
+  group_by(variable) %>%
+  summarize(median_iqr = paste(round(quantile(value, 0.5),2), "(", 
+                               round(quantile(value, 0.25),2), "-", round(quantile(value, 0.75),2), ")"))
+
+write_csv(summary, paste0(chem_dat, "chem_summary.csv"))
+```
+
+#exposure correlation matrix
+```{r}
+corr <- dat |>
+  select(c(2:30, 33:41)) |>
+  cor(method = "pearson") |>
+  melt()
+
+
+ggplot(corr, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", 
+                       midpoint = 0, breaks = seq(-1, 1, 0.2)) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        strip.text = element_text(colour = "black", size = 8),
+        strip.text.x = element_text(colour = "black", size = 6.5),
+        strip.text.y = element_text(colour = "black", size = 6.5)) +
+  labs(title = "", x = "", y = "") +
+  geom_text(aes(label = round(value, 2)), color = "black", size = 3)+
+  guides(fill=FALSE)
+```
+
+
+
+
+
+
+
