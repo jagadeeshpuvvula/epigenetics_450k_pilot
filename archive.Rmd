@@ -1,0 +1,122 @@
+---
+title: "archive"
+author: "Puvvula"
+date: "2023-09-20"
+output: pdf_document
+---
+
+#quality check
+```{r}
+# calculate the detection p-values
+detP <- detectionP(rgSet)
+
+# examine mean detection p-values across all samples to identify any failed samples
+pal <- brewer.pal(8,"Dark2")
+barplot(colMeans(detP), col=pal[factor(pheno_by_tiss$sentrix_id)], las=2, 
+        cex.names=0.8, ylab="Mean detection p-values")
+
+```
+
+#minfi qcReport
+```{r}
+#get minfi qc report
+qcReport(rgSet, sampNames=pheno_by_tiss$sentrix_id, sampGroups=pheno_by_tiss$sentrix_id, 
+         pdf="qcReport.pdf")
+```
+
+# remove poor quality samples
+```{r}
+# Drop samples if 5% of probes are above the p-value threshold
+samples_to_remove <- colSums(detP > 1e-7) > (0.05 * nrow(rgSet))
+table(samples_to_remove)
+
+# Remove samples exceeding the threshold from the methylation data
+rgset_f2 <- rgSet[!samples_to_remove, ]
+```
+
+#generate methyl and genomic ratio set
+```{r}
+# normalize the data; this results in a GenomicRatioSet object
+mSetSq_noob <- preprocessNoob(rgset_f2) 
+mSetSq_bmiq <- BMIQ(mSetSq_noob)
+
+#combat - for batch adjustment
+mSetSq_combat<- ComBat(dat = mSetSq_bmiq, batch = pheno_by_tiss$batch)
+
+#convert preprocessed +BMIQ object to a genomic ratio set
+mSetSq_v1<- makeGenomicRatioSetFromMatrix(mSetSq_combat)
+
+# create a MethylSet object from the raw data for plotting
+mSetRaw <- preprocessRaw(rgset_f2)
+```
+
+#multi dimensional scaling plots
+#principle components analysis and are an unsupervised method for looking at the similarities and differences between the various samples. Samples that are more similar to each other should cluster together, and samples that are very different should be further apart on the plot. Dimension one (or principle component one) captures the greatest source of variation in the data, dimension two captures the second greatest source of variation in the data and so on.  Colouring the data points or labels by known factors of interest can often highlight exactly what the greatest sources of variation are in the data. It is also possible to use MDS plots to decipher sample mix-ups.
+```{r}
+#change dim parameter to select different PCs from PCA
+par(mfrow=c(1,3))
+plotMDS(getM(mSetSq_v1), top=1000, gene.selection="common", 
+        col=pal[factor(pheno_by_tiss$batch)], dim=c(1,3))
+
+plotMDS(getM(mSetSq_v1), top=1000, gene.selection="common", 
+        col=pal[factor(pheno_by_tiss$batch)], dim=c(2,3))
+
+plotMDS(getM(mSetSq_v1), top=1000, gene.selection="common", 
+        col=pal[factor(pheno_by_tiss$batch)], dim=c(3,4))
+```
+
+#removing probes with poor quality using a p-value threshold
+```{r}
+# ensure probes are in the same order in the mSetSq and detP objects
+detP <- detP[match(featureNames(mSetSq_v1),rownames(detP)),] 
+
+# remove any probes that have failed in one or more samples
+keep <- rowSums(detP < 1e-7) == ncol(mSetSq_v1) 
+table(keep)
+
+mSetSqFlt <- mSetSq_v1[keep,]
+dim(mSetSqFlt)
+```
+
+#remove probes on sex chromosome
+```{r}
+# if your data includes males and females, remove probes on the sex chromosomes
+keep <- !(featureNames(mSetSqFlt) %in% ann450k$Name[ann450k$chr %in% 
+                                                        c("chrX","chrY")])
+table(keep)
+mSetSqFlt <- mSetSqFlt[keep,]
+dim(mSetSqFlt)
+```
+
+# exclude cross reactive probes
+# cross-hybrid probe list from: https://www.tandfonline.com/doi/full/10.4161/epi.23470
+```{r}
+xReactiveProbes <- read_csv(url("https://epigen.ccm.sickkids.ca/sample-report/data/quality_control/cross_reactive_probes.csv"),
+                             col_names = c("TargetID"))
+
+keep <- !(rownames(mSetSqFlt) %in% xReactiveProbes$TargetID)
+table(keep)
+
+mSetSqFlt <- mSetSqFlt[keep,] 
+dim(mSetSqFlt)
+```
+
+# remove probes with SNPs at CpG site
+```{r}
+mSetSqFlt <- dropLociWithSnps(mSetSqFlt)
+dim(mSetSqFlt)
+```
+
+#checking the PCA plots again
+```{r}
+#change dim parameter to select different PCs from PCA
+par(mfrow=c(1,3))
+plotMDS(getM(mSetSqFlt), top=1000, gene.selection="common", 
+        col=pal[factor(pheno_by_tiss$batch)], dim=c(1,3))
+
+plotMDS(getM(mSetSqFlt), top=1000, gene.selection="common", 
+        col=pal[factor(pheno_by_tiss$batch)], dim=c(2,3))
+
+plotMDS(getM(mSetSqFlt), top=1000, gene.selection="common", 
+        col=pal[factor(pheno_by_tiss$batch)], dim=c(3,4))
+```

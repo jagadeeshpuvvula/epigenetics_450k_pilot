@@ -1,0 +1,114 @@
+---
+title: "09_limma_ewas.Rmd"
+author: "Puvvula"
+date: "2023-09-15"
+output: pdf_document
+---
+
+
+
+###### Using limma package
+###########################
+#EWAS using limma package
+```{r}
+library(limma)
+# use the above to create a design matrix
+fit <- eBayes(lmFit(object = mVals, 
+             design = model.matrix(~0+nap1+CD8T+CD4T+NK+Bcell+Mono+Gran+nRBC,
+                                   data=dat_pheno),
+             method = "ls"))
+
+#Adding gene list parameters
+# Retrieve data from the array annotation package; this is array-specific
+DMPs <- topTable(fit, num=Inf, coef=1, genelist=ann450kSub)
+head(DMPs)
+```
+
+
+```{r}
+ggplot(DMPs, aes(x=(B), y=-log10(adj.P.Val))) +
+    geom_point(size=0.8)+ 
+    #geom_hline(yintercept = -log10(0.05/(nCpG))) +
+    geom_text(aes(label = UCSC_RefGene_Name), na.rm = TRUE, hjust = -0.3)+
+    scale_x_continuous(name="Adjusted m-value",
+                       labels=scales::comma) +
+    scale_y_continuous(name="-log10(adj.P.Val)", labels=scales::comma)  +
+    theme_bw() +
+    theme(panel.grid.major=element_blank(),
+          panel.grid.minor=element_blank(),
+          legend.position="bottom", # set legend position to bottom
+          legend.box="horizontal")
+```
+
+
+#testing
+```{r}
+perform_eBayes_and_save <- function(exposures, covariates, output_folder) {
+  for (var in exposures) {
+    # Create the formula with the current variable and the list of covariates
+    formula <- as.formula(paste("~0+", paste(c(var, covariates), collapse = "+")))
+    
+    # Create the design matrix with the formula
+    design <- model.matrix(formula, data = dat_pheno)
+    
+    # Perform eBayes operation
+    fit <- lmFit(object = mVals, design = design, method = "ls")
+    ebayes_result <- eBayes(fit)
+    
+    # Generate the topTable
+    top_table <- topTable(ebayes_result, num = Inf, coef = 1, genelist = ann450kSub)
+    
+    # Save the topTable result as a CSV file in the output folder
+    output_file <- file.path(output_folder, paste0(var, "_topTable.csv"))
+    write.csv(top_table, file = output_file, row.names = FALSE)
+  }
+}
+```
+
+```{r}
+perform_eBayes_and_save_parallel(exposures = c("nap1", "nap2", "phen1"),
+                        covariates = c("CD8T", "CD4T", "NK", "Bcell", "Mono", "Gran", "nRBC"),
+                        output_folder = "~/Documents/methylation_pilot/testing",
+                        num_cores = 10)
+```
+
+
+
+#load ewas specific libraries
+```{r}
+pacman::p_load(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+```
+
+# for cpg annotation   
+```{r}
+ann450k = getAnnotation(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+
+ann450kSub <- ann450k[match(rownames(mVals),ann450k$Name),
+                      c(1:4,12:19,24:ncol(ann450k))]
+```
+
+#Gene ontology
+```{r}
+# Get the significant CpG sites at less than 5% FDR
+sigCpGs <- DMPs$Name[DMPs$adj.P.Val<0.05]
+# First 10 significant CpGs
+sigCpGs[1:10]
+# Total number of significant CpGs at 5% FDR
+length(sigCpGs)
+# Get all the CpG sites used in the analysis to form the background
+all <- DMPs$Name
+# Total number of CpG sites tested
+length(all)
+```
+
+#KEGG enrichment
+```{r}
+library(missMethyl)
+# Run enrichment - Can take a bit of time...
+gst <- gometh(sig.cpg=sigCpGs, 
+              all.cpg=all,
+              collection = c("GO", "KEGG"))
+
+# Top 10 GO categories
+topGSA(gst, number=10)
+```

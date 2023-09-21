@@ -4,15 +4,18 @@ author: "Puvvula"
 date: "2023-07-05"
 output: pdf_document
 ---
+#https://nbis-workshop-epigenomics.readthedocs.io/en/latest/content/tutorials/methylationArray/Array_Tutorial.html
 
 ```{r}
 library(pacman)
-pacman::p_load(tidyverse, janitor)
+pacman::p_load(tidyverse, janitor, CpGassoc, future, future.apply, appliedepi)
 processed<- "~/Documents/methylation_pilot/processed/"
 ```
 
 #CMBC analysis
-```{r}
+```{r, message=FALSE, warning=FALSE}
+#load one of these files: cbmc_processed.rda; fp_processed.rda; mp_processed.rda
+
 load(paste0(processed, "cbmc_processed.rda"))
 dat_chem_qn <- read_csv("~/Documents/methylation_pilot/exp_processed/chem_qn_fin.csv")
 
@@ -26,66 +29,72 @@ dat_pheno <- cbmc_pheno |>
 #check sequence of gsm_id from preprocessed and pheno data
 ```{r}
 bVals <- bVals[, match(dat_pheno$gsm_id, colnames(bVals)), drop = FALSE]
+mVals <- mVals[, match(dat_pheno$gsm_id, colnames(mVals)), drop = FALSE]
 
 setdiff(dat_pheno$gsm_id, colnames(bVals))
-```
+setdiff(dat_pheno$gsm_id, colnames(mVals))
 
-
-#load ewas specific libraries
-```{r}
-pacman::p_load(CpGassoc, qqman, IlluminaHumanMethylation450kanno.ilmn12.hg19, data.frame)
-```
-
-# for cpg annotation
-```{r}
-ann450k = getAnnotation(IlluminaHumanMethylation450kanno.ilmn12.hg19)
-
-ann450kSub <- ann450k[match(rownames(bVals),ann450k$Name),
-                      c(1:4,12:19,24:ncol(ann450k))]
-```
-
-
-#ewas using M-values 
-#reduces heteroscedasticity to meet linear model assumptions, see [Du P, et al. BMC Bioinformatics. 2010](https://pubmed.ncbi.nlm.nih.gov/21118553/).
-```{r}
 nCpG = dim(bVals)[1]
-cbmc_ewas<- cpg.assoc(beta.val= bVals, 
-                      indep= dat_pheno$nap1, 
-                      covariates = as.data.frame(dat_pheno[, c("CD8T", "CD4T", "NK", "Bcell", "Mono", "Gran", "nRBC")]), 
-                      logit.transform = TRUE, 
-                      fdr.cutoff = 0.05, fdr.method = "BH")
 ```
 
-#extract results
+# beta input dataset transforms into m values set in the function
 ```{r}
-plot(cbmc_ewas, main="QQ plot for association between methylation and Smoking\nadjusted for cell proportions")
-
-#extract lambda
-lambda <- function(p) median(qchisq(p, df=1, lower.tail=FALSE), na.rm=TRUE) / qchisq(0.5, df=1)
-lambda(cbmc_ewas$results[,3])
-
-datamanhat = cbind(cbmc_ewas$results, cbmc_ewas$coefficients)
-setDT(datamanhat)
-datamanhat = datamanhat[,.(probe_id=CPG.Labels,effect.size,std.error,P.value)]
-datamanhat = merge(datamanhat, manifest[,.(probe_id,chr,mapinfo)],by="probe_id")
-
-#' See where the top hits are
-datamanhat[order(P.value)][1:20]
-
-#' Volcano Plot-results2
-#' Bonferroni threshold
-#' 
-plot(-log10(P.value) ~ effect.size,
-     data=datamanhat,
-     xlab="M-value change",ylab="-log10(p-value)",
-     main="Volcano Plot\nadjusted for cell proportions")
-abline(h = -log10(0.05/(nCpG)), lty=1, col="red", lwd=2)
+#cell types for CMBC: "CD8T", "CD4T", "NK", "Bcell", "Mono", "Gran", "nRBC"
+ewas_loop_pll(exposures= c("x24_dcp", "x25_dcp", "bp_3", "bpa", "bps",
+                           "e_pb", "m_pb", "p_pb",
+                           "mecptp", "mehhtp", "monp", "m_bp", "m_bz_p", "m_cnp", "m_cop", "m_ep", "mi_bp",
+                           "fluo2", "nap1", "nap2", "phen1", "phen4", "phen9", "phen23", "pyr1"),
+              covariates= c("mom_age", "mom_race", "mom_edu", "pgtob", "bmi", "sex",
+                            "cell_fp_1", "cell_fp_2", "cell_fp_3", "cell_fp_4", "cell_fp_5"),
+              bVals_list = list(bVals),
+              bVals_names = list("mp"),
+              dat_pheno = dat_pheno,
+              outputFolder = "~/Documents/methylation_pilot/mp_results")
 ```
 
-#annotation
+#EWAS summary
 ```{r}
-
+ewas_summary <- function(folder_path) {
+    # Get a list of CSV files in the specified folder
+    files <- list.files(path = folder_path, pattern = "\\.csv$", full.names = TRUE)
+    
+    # Initialize an empty data.frame to store results
+    result_df <- data.frame(File_Name = character(0),
+                            Num_Observations_FDR_lt_0.05 = numeric(0),
+                            CPG_Labels_FDR_lt_0.05 = character(0),
+                            stringsAsFactors = FALSE)
+    
+    for (file_path in files) {
+        # Read the file
+        data <- read.csv(file_path)
+        
+        # Filter observations with FDR < 0.05
+        filtered_data <- data[data$FDR < 0.05, ]
+        
+        # Get the count of observations with FDR < 0.05
+        count_fdr_lt_0.05 <- nrow(filtered_data)
+        
+        # Get the list of CPG.Labels with FDR < 0.05 as a comma-separated string
+        cpg_labels_lt_0.05 <- paste(filtered_data$CPG.Labels, collapse = ", ")
+        
+        # Extract file name from the path
+        file_name <- basename(file_path)
+        
+        # Create a data.frame for the current file
+        file_result <- data.frame(
+            File_Name = file_name,
+            Num_Observations_FDR_lt_0.05 = count_fdr_lt_0.05,
+            CPG_Labels_FDR_lt_0.05 = cpg_labels_lt_0.05,
+            stringsAsFactors = FALSE
+        )
+        
+        # Append the results for the current file to the overall result
+        result_df <- rbind(result_df, file_result)
+    }
+    
+    # Return the resulting dataframe
+    return(result_df)
+}
 ```
-
 
 

@@ -91,10 +91,12 @@ write_csv(datFltr, paste0(chem_dat, "chem_qn_fin.csv"))
 
 # exposure summary and correlation matrix
 ```{r}
-dat<- read_csv(paste0(chem_dat, "chem_qn_fin.csv"))
+dat<- read_csv(paste0(chem_dat, "chem_qn_fin.csv")) |>
+  select(-c(b_pb, bpf, tcc, tcs, mcoch, m_hi_nch, m_cpp, 
+            m_ecpp, m_ehhp, m_ehp, m_eohp, m_np))
 
 summary <- dat %>%
-  gather(variable, value, -c(1, 31, 32, 42:76)) %>%
+  gather(variable, value, c(4:29)) %>%
   group_by(variable) %>%
   summarize(median_iqr = paste(round(quantile(value, 0.5),2), "(", 
                                round(quantile(value, 0.25),2), "-", round(quantile(value, 0.75),2), ")"))
@@ -105,14 +107,14 @@ write_csv(summary, paste0(chem_dat, "chem_summary.csv"))
 #exposure correlation matrix
 ```{r}
 corr <- dat |>
-  select(c(2:30, 33:41)) |>
+  select(c(4:29)) |>
   cor(method = "pearson") |>
   melt()
 
 
 ggplot(corr, aes(x = Var1, y = Var2, fill = value)) +
   geom_tile() +
-  scale_fill_gradient2(low = "blue", mid = "white", high = "red", 
+  scale_fill_gradient2(low = "red", mid = "white", high = "blue", 
                        midpoint = 0, breaks = seq(-1, 1, 0.2)) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
