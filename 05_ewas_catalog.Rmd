@@ -1,0 +1,42 @@
+---
+title: "05_ewas_catalog"
+author: "Puvvula"
+date: "2023-09-26"
+output: pdf_document
+---
+#https://github.com/MRCIEU/ewascatalog-r
+```{r}
+#devtools::install_github("MRCIEU/ewascatalog-r")
+library(ewascatalog)
+```
+
+```{r}
+ewascatalog_multiple <- function(cpg_values, type = "cpg") {
+  # Initialize an empty list to store the dataframes
+  df_list <- list()
+  
+  # Loop through each CpG value
+  for (cpg_value in cpg_values) {
+    # Call ewascatalog for the current CpG value
+    result <- ewascatalog(query = cpg_value, type = type)
+    
+    # Add the result to the list
+    df_list[[cpg_value]] <- result
+  }
+  
+  # Combine all data frames into a single dataframe
+  combined_df <- do.call(rbind, df_list)
+  
+  
+  return(combined_df)
+}
+```
+
+
+```{r}
+compiled_data <- ewascatalog_multiple(cpg_values= c("cg25307371", "cg06213004", "cg09513380", "cg26235490",
+                                                    "cg21429516", "cg16594139"), type = "cpg")
+```
+
+
+
