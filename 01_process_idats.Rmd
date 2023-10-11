@@ -30,16 +30,30 @@ unique_counts <- pheno |>
 #visualize chip info
 ```{r}
 # Generate the heatmap using ggplot2
-cb_palette <- c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7",
-                   "#999999", "#A69F00", "#6AB4E9", "#109E73", "#E0E442", "#4072B2", "#B55E00", "#EC79A7")
+cb_palette <- c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442", 
+                "#0072B2", "#D55E00", "#CC79A7", "#999999", "#A69F00", 
+                "#6AB4E9", "#109E73", "#E0E442", "#4072B2", "#B55E00", 
+                "#EC79A7")
 
-ggplot(pheno, aes(x = sample_type, y = participant_id, fill = factor(sentrix_id))) +
-  geom_tile(width = 0.5, height = 0.8,) +
+ggplot(pheno, aes(x = factor(sample_type), y = participant_id, fill = factor(sentrix_id))) +
+  geom_tile(width = 0.8, height = 0.8) +
   scale_x_discrete(expand = c(0, 0))+
   scale_fill_manual(values = cb_palette)+
   labs(x = "Sample Type", y = "Subject ID", fill = "Sentry ID") +
-  theme_minimal()+
-  guides(fill = "none")
+  theme(#panel.grid.major = element_blank(), 
+        #panel.grid.minor = element_blank(),
+        panel.background = element_blank(), 
+        axis.text.y = element_text(size=7),
+        panel.spacing = unit(.08, "lines"),
+        panel.border = element_rect(color = "black", fill = NA, size = 1),
+        strip.background = element_rect(color = "black", size = 0.8),
+        strip.text = element_blank(),
+        axis.line = element_line(colour = "black"))+
+  guides(fill = "none")+
+  facet_grid(rows = vars(sentrix_id), scales = "free", space = "free")
+
+ggsave("~/Documents/methylation_pilot/chip_seq.tiff", width = 4, height = 8.5,
+       dpi = 300)
 ```
 
 #================= Mehtylation data ======================#
