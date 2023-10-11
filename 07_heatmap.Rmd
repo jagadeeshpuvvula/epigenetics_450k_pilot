@@ -1,0 +1,41 @@
+---
+title: "07_heatmaps"
+author: "Puvvula"
+date: "2023-10-11"
+output: pdf_document
+---
+
+```{r}
+library(pacman)
+p_load(tidyverse, janitor, ComplexHeatmap)
+processed<- "~/Documents/methylation_pilot/processed/fp_ref_cell_cnt/"
+```
+
+```{r}
+load(paste0(processed, "fp_processed.rda"))
+
+rm(list = setdiff(ls(), "bVals"))
+```
+
+#drop CpG with <25% variance in methylation intensities
+```{r}
+bval_df <- bVals|>
+  t() 
+
+# Calculate the variance for each column
+variances <- apply(bval_df, 2, var, na.rm = TRUE)
+
+# Filter CpG sites with at least a percent threshold variance
+filtered_bval_df <- bval_df[, variances >= 0.1] #using 10% here
+
+# Convert the filtered data frame back to a matrix
+filtered_bVals <- as.matrix(filtered_bval_df)
+```
+
+#visualizing these CpGs to find if there are any participant clusters
+```{r}
+Heatmap(filtered_bVals, 
+        show_row_names = T,
+        show_column_names = T)
+``` 
+
