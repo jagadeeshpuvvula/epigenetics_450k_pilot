@@ -1,0 +1,23 @@
+---
+title: "03_gene_enrich"
+author: "Puvvula"
+date: "2023-09-25"
+output: pdf_document
+---
+
+```{r}
+library(missMethyl)
+```
+
+#performing gene enrichment analysis using KEGG database
+```{r}
+perform_gene_enrichment(input_folder = "~/Documents/methylation_pilot/res_annotated_cell_cnt",
+                        output_folder = "~/Documents/methylation_pilot/res_enriched_cell_cnt")
+```
+
+#summarizing gene enrichement results
+```{r}
+enrichment_summary(folder_path = "~/Documents/methylation_pilot/res_enriched_cell_cnt",
+                   output_folder = "~/Documents/methylation_pilot/res_enriched_cell_cnt")
+```
+
