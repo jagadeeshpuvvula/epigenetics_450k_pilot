@@ -1,0 +1,261 @@
+---
+title: "04_overlaps"
+author: "Puvvula"
+date: "2023-09-25"
+output: pdf_document
+---
+
+```{r}
+library(pacman)
+pacman::p_load(tidyverse, janitor, UpSetR, ggrepel)
+
+results<- "~/Documents/methylation_pilot/res_annotated_cell_cnt"
+```
+
+
+# Define a function to read a CSV file and return it as a tibble
+```{r}
+read_csv_as_tibble <- function(file_path) {
+  read_csv(file_path)
+}
+```
+
+# List all CSV files in a directory and combine them into a tibble
+```{r}
+combined_data <- list.files(path = results, pattern = "\\.csv$", full.names = TRUE) |>
+  map_dfr(~ {
+    read_csv_as_tibble(.) |>
+      mutate(
+        filename = gsub("^.*/|\\.csv$|^anno_df_manhat_", "", basename(.))
+      )
+  })
+```
+
+#overlap_plots
+```{r}
+df<- combined_data |> filter(fdr<0.05) |>
+  mutate(
+    UCSC_RefGene_Name = sapply(strsplit(gsub("\\s+", "", UCSC_RefGene_Name), ";"), function(x) paste(unique(x), collapse = "; ")),
+    UCSC_RefGene_Group = sapply(strsplit(gsub("\\s+", "", UCSC_RefGene_Group), ";"), function(x) paste(unique(x), collapse = "; "))
+  )|> 
+  separate(filename, into = c("chemical", "tissue"), sep = "_(?=[^_]+$)", remove = FALSE)
+# |> separate(filename, into = c("chemical", "tissue"), sep = "_(?=[^_]+$)", remove = FALSE)
+
+write_csv(df, paste0(results, "/sig_cpg_summary.csv"))
+```
+
+```{r}
+df_fig <-df |>
+  #filter(tissue=="fp")|> 
+  select(cpg_labels, filename) |>
+  distinct(cpg_labels, filename, .keep_all=TRUE) |>
+  unnest(cols = filename) |>
+  mutate(GenreMember=1) |>
+  pivot_wider(names_from = filename, values_from = GenreMember, values_fill = list(GenreMember = 0)) |>
+  as.data.frame() |>
+  rename(
+    `Bisphenol-A MP` = bpa_mp,
+    `2-Hydroxyfluorene FP` = fluo2_fp,
+    `2-Hydroxyfluorene MP` = fluo2_mp,
+    `Mono carboxyisononyl phthalate MP` = m_cnp_mp,
+    `1-Hydroxynapthalene FP` = nap1_fp,
+    `1-Hydroxynapthalene MP` = nap1_mp,
+    `1-Hydroxynapthalene CBMC` = nap1_mom_cmbc,
+    `4-Hydroxyphenanthrene MP` = phen4_mp,
+    `1-Hydroxypyrene  FP` = pyr1_fp,
+    `1-Hydroxypyrene  MP` = pyr1_mp)|>
+  select(cpg_labels, 
+         `Bisphenol-A MP`,
+         `Mono carboxyisononyl phthalate MP`,
+         `4-Hydroxyphenanthrene MP`,
+         `2-Hydroxyfluorene FP`,
+         `2-Hydroxyfluorene MP`,
+         `1-Hydroxypyrene  FP`,
+         `1-Hydroxypyrene  MP`,
+         `1-Hydroxynapthalene FP`,
+         `1-Hydroxynapthalene MP`,
+         `1-Hydroxynapthalene CBMC`,
+         )
+```
+
+```{r}
+upset(df_fig, 
+      keep.order = TRUE,
+      nsets = 10,
+      sets.bar.color = c("#0072B2", "#009E73", "#009E73", "#56B4E9", "#56B4E9", "#E69F00", "#E69F00", "#999999", "#999999", "#999999"),
+      sets = c("Bisphenol-A MP",
+               "Mono carboxyisononyl phthalate MP", 
+               "4-Hydroxyphenanthrene MP",
+               "2-Hydroxyfluorene FP", 
+               "2-Hydroxyfluorene MP",
+               "1-Hydroxypyrene  FP", 
+               "1-Hydroxypyrene  MP",
+               "1-Hydroxynapthalene FP", 
+               "1-Hydroxynapthalene MP", 
+               "1-Hydroxynapthalene CBMC"),
+      set_size.show = TRUE,
+      text.scale = 1.5, point.size = 4, line.size = 1,
+      mainbar.y.max = 25,
+      set_size.scale_max = 50,
+      mainbar.y.label="No.of Overlapping CpGs \nacross chemicals",
+      sets.x.label="Total no.of CpGs \nper chemical")
+
+ggsave("~/Documents/methylation_pilot/res_annotated_cell_cnt/cpg_overlap.tiff", 
+       width = 10, height = 8, dpi=100)
+```
+
+################################################################################
+################################################################################
+#volcano and manhattan plots
+```{r}
+df <- combined_data |>
+  mutate(
+    UCSC_RefGene_Name = sapply(strsplit(gsub("\\s+", "", UCSC_RefGene_Name), ";"), function(x) paste(unique(x), collapse = "; ")),
+    UCSC_RefGene_Group = sapply(strsplit(gsub("\\s+", "", UCSC_RefGene_Group), ";"), function(x) paste(unique(x), collapse = "; "))
+  ) |>
+  separate(filename, into = c("chemical", "tissue"), sep = "_(?=[^_]+$)", remove = FALSE) |>
+  mutate(
+    beta_dir = case_when(
+      fdr < 0.05 & effect_size > 0 ~ "positive-significant",
+      fdr < 0.05 & effect_size < 0 ~ "negative-significant",
+      fdr > 0.05 & effect_size > 0 ~ "positive-non_significant",
+      fdr > 0.05 & effect_size < 0 ~ "negative-non_significant",
+      TRUE ~ NA_character_
+    ),
+    filename = recode(filename,
+                      `Bisphenol-A MP` = "bpa_mp",
+                      `2-Hydroxyfluorene FP` = "fluo2_fp",
+                      `2-Hydroxyfluorene MP` = "fluo2_mp",
+                      `Mono carboxyisononyl phthalate MP` = "m_cnp_mp",
+                      `1-Hydroxynapthalene FP` = "nap1_fp",
+                      `1-Hydroxynapthalene MP` = "nap1_mp",
+                      `1-Hydroxynapthalene CBMC` = "nap1_mom_cmbc",
+                      `4-Hydroxyphenanthrene MP` = "phen4_mp",
+                      `1-Hydroxypyrene  FP` = "pyr1_fp",
+                      `1-Hydroxypyrene  MP` = "pyr1_mp"))
+```
+
+#plot prep
+```{r}
+df_nap_fluo<- df |>
+  filter(chemical %in% c("nap1", "nap1_mom", "fluo2"))
+
+df_rest<- df |>
+  filter(chemical %in% c("pyr1", "phen4", "bpa", "m_cnp"))
+
+# Define a custom labeller function
+custom_labeller <- function(variable) {
+  labels <- list(
+    fluo2_fp = "2-Hydroxyfluorene FP",
+    fluo2_mp = "2-Hydroxyfluorene MP",
+    nap1_fp = "1-Hydroxynapthalene FP",
+    nap1_mp = "1-Hydroxynapthalene MP",
+    nap1_mom_cmbc = "1-Hydroxynapthalene CBMC",
+    m_cnp_mp = "Mono carboxyisononyl phthalate MP",
+    phen4_mp = "4-Hydroxyphenanthrene MP",
+    pyr1_fp = "1-Hydroxypyrene FP",
+    pyr1_mp = "1-Hydroxypyrene MP",
+    bpa_mp = "Bisphenol-A MP"
+  )
+
+  # Convert factor levels to character
+  variable <- as.character(variable)
+
+  # Lookup the labels for each level
+  mapped_labels <- sapply(variable, function(level) {
+    if (level %in% names(labels)) {
+      return(labels[[level]])
+    } else {
+      return("Unknown Label")
+    }
+  })
+
+  return(mapped_labels)
+}
+```
+
+#plot
+```{r}
+ggplot(df_rest, aes(x=effect_size, y=-log10(p_value), color=beta_dir))+
+  geom_point(size=0.2)+
+  geom_text_repel(data = subset(df_rest, fdr < 0.05),
+                  aes(label = paste(cpg_labels, paste(chr, UCSC_RefGene_Name, sep = "-"), sep = "\n")), 
+                  size = 1.7,
+                  min.segment.length = 0,
+                  verbose = TRUE, seed = 123, max.time = 10, max.iter = Inf)+
+  scale_x_continuous(name="Adjusted beta coefficient per unit change in chemical biomarker",
+                       labels=scales::comma) +
+  scale_y_continuous(name="-log10(P-value)", labels=scales::comma) +
+  facet_wrap(~ factor(filename, levels=c("nap1_fp", "nap1_mp", "nap1_mom_cmbc", 
+                                         "fluo2_fp", "fluo2_mp",
+                                         "pyr1_fp", "pyr1_mp", "phen4_mp",
+                                         "m_cnp_mp", "bpa_mp")),
+             ncol=3, nrow=4, scales="free",  
+             labeller = as_labeller(custom_labeller)) +
+  theme_bw() +
+  theme(panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        legend.position="bottom", # set legend position to bottom
+        legend.box="horizontal",
+        legend.box.margin = margin(0, 0, -0.5, 0)) + 
+  labs(color="Beta direction")+
+  scale_color_manual(values = c("positive-significant" = "blue",
+                                  "negative-significant" = "red",
+                                  "positive-non_significant" = "grey",
+                                  "negative-non_significant" = "grey"))
+
+ggsave("~/Documents/methylation_pilot/res_annotated_cell_cnt/volcano_plt_p2.tiff", 
+       width = 8, height = 10, dpi=300)
+```
+
+#summary desc for text
+```{r}
+total_counts <- df |>
+  group_by(chemical, tissue, UCSC_RefGene_Group) |>
+  summarise(
+    total_rows = n(),
+    count_effect_positive = sum(effect_size > 0),
+    count_effect_negative = sum(effect_size < 0)
+  ) |>
+  ungroup() |>
+  filter(chemical == "nap1" & tissue == "mp")
+
+summary_dff <- df |>
+  #filter(effect_size < 0) |>
+  group_by(chemical, tissue, UCSC_RefGene_Name, UCSC_RefGene_Group) %>%
+  summarise(
+    n = n(),
+    distinct_cpg_labels = toString(unique(cpg_labels)),
+    num_unique_cpg_labels = length(unique(cpg_labels))
+  ) |>
+  ungroup() |>
+  filter(UCSC_RefGene_Name != "NA") |>
+  left_join(total_counts, by = c("chemical", "tissue"))|>
+  filter(n>1)
+```
+
+
+
+#count frequency of cpgs and genes for text
+```{r}
+summary_df <- df |>
+  group_by(tissue,UCSC_RefGene_Name) |>
+  summarise(
+    n = n(),
+    distinct_cpg_labels = toString(unique(cpg_labels)),
+    num_unique_cpg_labels = length(unique(cpg_labels)),
+    distinct_chemicals = toString(unique(chemical))
+  ) |>
+  ungroup() |>
+  filter(UCSC_RefGene_Name != "NA")
+```
+
+
+#decimal to scientific notation
+```{r}
+sprintf("%.2e", 0.01981368)
+```
+
+
+
+
