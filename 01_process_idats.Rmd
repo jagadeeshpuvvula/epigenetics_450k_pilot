@@ -7,7 +7,7 @@ output: pdf_document
 
 ```{r}
 library(pacman)
-pacman::p_load(tidyverse, janitor, stringi, UpSetR)
+pacman::p_load(tidyverse, janitor, stringi, UpSetR, planet)
 pheno_loc <- "~/Documents/methylation_pilot/"
 idats<- "~/Documents/methylation_pilot/idat_files/"
 processed<- "~/Documents/methylation_pilot/processed/"
@@ -93,6 +93,29 @@ minfi.LC<- estimateCellCounts(rgSet,compositeCellType = "CordBlood",
 ```
 
 #=======================================
+#planet reference based cell composition
+```{r}
+load(paste0(processed, "mp_processed.rda"))
+
+data("plCellCpGsThird") #Third trimester reference data
+row_indices <- match(rownames(plCellCpGsThird), rownames(bVals)) #subsetting CpGs that match reference data
+
+#estimate cell count - Reference based method - placenta
+houseman_estimates <- minfi:::projectCellType(
+  
+  # subset your data to cell cpgs
+  filtered_bVals <- bVals[row_indices, , drop = FALSE],
+  
+  # input the reference cpg matrix
+  plCellCpGsThird,
+  
+  lessThanOne = FALSE)
+
+cell_est<- houseman_estimates|>
+  as_tibble(rownames="gsm_id") |>
+  rename_at(vars(2:7), ~ paste0("cell_mp_", .))
+```
+
 #reference free deconvolution 
 
 ```{r}
@@ -111,11 +134,11 @@ ref_free_cells<- as_tibble(x$Omega, rownames="gsm_id") |>
 
 #export cell type counts
 ```{r}
-mp_pheno <- right_join(ref_free_cells, pheno_by_tiss, by = "gsm_id")
+mp_pheno <- right_join(cell_est, pheno_by_tiss, by = "gsm_id")
 ```
 
-#export rda objects for downstream analysis
+#export rda objects for downstream analysis :: file = paste0(processed, "mp_processed.rda")
 ```{r}
-save(bVals, mVals, mSetSqFlt, mp_pheno, file = paste0(processed, "mp_processed.rda"))
+save(bVals, mVals, mSetSqFlt, mp_pheno,  file = "~/Documents/methylation_pilot/fp_ref_cell_cnt/mp_processed.rda")
 ```
 
