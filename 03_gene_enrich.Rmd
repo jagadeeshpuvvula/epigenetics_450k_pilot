@@ -21,3 +21,12 @@ enrichment_summary(folder_path = "~/Documents/methylation_pilot/res_enriched_cel
                    output_folder = "~/Documents/methylation_pilot/res_enriched_cell_cnt")
 ```
 
+############## sensitivity analysis 
+```{r}
+joe_gene_enrichment(input_folder = "~/Documents/methylation_pilot/res_annotated_cell_cnt",
+                        output_folder = "~/Documents/methylation_pilot/joe_enrichment")
+
+enrichment_summary(folder_path = "~/Documents/methylation_pilot/joe_enrichment",
+                   output_folder = "~/Documents/methylation_pilot/joe_enrichment")
+```
+
