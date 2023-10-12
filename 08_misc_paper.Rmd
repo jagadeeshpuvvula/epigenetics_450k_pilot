@@ -1,0 +1,125 @@
+---
+title: "08_misc_paper"
+author: "Puvvula"
+date: "2023-10-11"
+output: pdf_document
+---
+
+```{r}
+library(pacman)
+p_load(tidyverse, janitor, appliedepi)
+```
+
+```{r}
+load("~/Documents/methylation_pilot/processed/mp_ref_cell_cnt/mp_processed.rda")
+load("~/Documents/methylation_pilot/processed/fp_ref_cell_cnt/fp_processed.rda")
+load("~/Documents/methylation_pilot/processed/cbmc_processed.rda")
+rm(bVals, mSetSqFlt, mVals)
+```
+
+#creating cell deconvolution dataframe
+```{r}
+cbmc_pheno<- cbmc_pheno |> select("participant_id", "CD8T", "CD4T", "NK", "Bcell", "Mono", "Gran") |>
+  rename_at(vars(2:7), ~ paste0("cbmc_", .))
+
+fp_pheno <- fp_pheno |> select("participant_id", "cell_fp_Trophoblasts", "cell_fp_Stromal", "cell_fp_Hofbauer", "cell_fp_Endothelial",
+                               "cell_fp_nRBC", "cell_fp_Syncytiotrophoblast")|>
+  rename_at(vars(2:7), ~ sub("^cell_", "", .))
+
+mp_pheno<- mp_pheno |> select("participant_id", "cell_mp_Trophoblasts", "cell_mp_Stromal","cell_mp_Hofbauer",
+                              "cell_mp_Endothelial", "cell_mp_nRBC", "cell_mp_Syncytiotrophoblast") |>
+  rename_at(vars(2:7), ~ sub("^cell_", "", .))
+
+
+cell_data <- mp_pheno |>
+  full_join(fp_pheno, by = "participant_id") |>
+  full_join(cbmc_pheno, by = "participant_id")
+```
+
+#load exposure data and merge with cell counts
+```{r}
+dat_chem_qn <- read_csv("~/Documents/methylation_pilot/exp_processed/chem_qn_fin.csv")
+
+dat_pheno <- cell_data |>
+  left_join(dat_chem_qn, by = "participant_id") |>
+  mutate(across(where(is.character), as.factor)) |>
+  filter(if_any(22:59, ~ !is.na(.))) |>
+  mutate(across(22:59, ~ log10(. + 0.000001)))
+```
+
+#clear environment
+```{r}
+rm(list = setdiff(ls(), "dat_pheno"))
+```
+
+
+```{r}
+res_df <- appliedepi::lm_func(dependent_vars = c("mp_Trophoblasts", "mp_Stromal", "mp_Hofbauer",
+                                      "mp_Endothelial", "mp_nRBC", "mp_Syncytiotrophoblast",
+                                      "fp_Trophoblasts", "fp_Stromal", "fp_Hofbauer",
+                                      "fp_Endothelial", "fp_nRBC", "fp_Syncytiotrophoblast",
+                                      "cbmc_CD8T", "cbmc_CD4T", "cbmc_NK", "cbmc_Bcell",
+                                      "cbmc_Mono", "cbmc_Gran"),
+                   independent_vars = c("x24_dcp", "x25_dcp", 
+                                        "bp_3", "bpa", "bpf", "bps",
+                                        "e_pb", "m_pb", "p_pb", 
+                                        "mecptp", "mehhtp", "monp", "m_bp", "m_bz_p", 
+                                        "m_cnp", "m_cop", "m_ep", "mi_bp",
+                                        "fluo2", "nap1", "nap2",
+                                        "phen1", "phen4", "phen9", "phen23", "pyr1"),
+                   covariates = c("mom_age", "mom_race", "mom_edu", "pgtob", "bmi", "sex"),
+                   data = dat_pheno,
+                   include_sex = FALSE,
+                   include_cohort = FALSE,
+                   conf_level = 0.95)
+```
+
+```{r}
+# Define the mapping for independent_variable
+independent_variable_mapping <- c(
+  `2,4-dichlorophenol` = "x24_dcp",
+  `2,5-dichlorophenol` = "x25_dcp",
+  `Benzophenone-3` = "bp_3",
+  `Bisphenol-A` = "bpa",
+  `Bisphenol-F` = "bpf",
+  `Bisphenol-S` = "bps",
+  `Ethyl Paraben` = "e_pb",
+  `Methyl Paraben` = "m_pb",
+  `Propyl Paraben` = "p_pb",
+  `Mono-2-ethyl-5-carboxypentyl terephthalate` = "mecptp",
+  `Mono-2-ethyl-5-hydrohexyl terephthalate` = "mehhtp",
+  `Monooxononyl phthalate` = "monp",
+  `Mono-n-butyl phthalate` = "m_bp",
+  `Monobenzyl phthalate` = "m_bz_p",
+  `Mono carboxyisononyl phthalate` = "m_cnp",
+  `Mono carboxyisooctyl phthalate` = "m_cop",
+  `Monoethyl phthalate` = "m_ep",
+  `Mono-isobutyl phthalate` = "mi_bp",
+  `2-Hydroxyfluorene` = "fluo2",
+  `1-Hydroxynaphthalene` = "nap1",  # Corrected typo in variable name
+  `2-Hydroxynaphthalene` = "nap2",  # Corrected typo in variable name
+  `1-Hydroxyphenanthrene` = "phen1",
+  `2,3-Hydroxyphenanthrene` = "phen23",
+  `4-Hydroxyphenanthrene` = "phen4",
+  `9-Hydroxyphenanthrene` = "phen9",
+  `1-Hydroxypyrene` = "pyr1"
+)
+
+res_df_fin <- res_df |>
+  filter(cohort_level == "all" & sex_level == "all") |>
+  mutate(across(all_of(c("coefficient", "ci_lower", "ci_upper")), ~ sprintf("%.2f (%.2f, %.2f)", .x, ci_upper, ci_lower))) |>
+  mutate(independent_variable = fct_recode(independent_variable, !!!independent_variable_mapping))  |>
+  select(-c(ci_lower, ci_upper, sex_level, cohort_level, p_value)) |>
+  mutate(dna_m_smpl = if_else(grepl("^cbmc_", dependent_variable), "CBMC",
+                                          if_else(grepl("^fp_", dependent_variable), "Fetal placenta",
+                                                  if_else(grepl("^mp_", dependent_variable), "Maternal placenta", dependent_variable) ) ) ) |>
+  mutate(dependent_variable = str_replace(dependent_variable, "^(mp_|cbmc_|fp_)", ""))
+  
+#Save results
+write_csv(res_df_fin, "~/Documents/methylation_pilot/chem_cell_prop_lm.csv")
+```
+
+
+
+
+
