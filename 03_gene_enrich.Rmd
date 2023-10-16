@@ -24,9 +24,9 @@ enrichment_summary(folder_path = "~/Documents/methylation_pilot/res_enriched_cel
 ############## sensitivity analysis 
 ```{r}
 joe_gene_enrichment(input_folder = "~/Documents/methylation_pilot/res_annotated_cell_cnt",
-                        output_folder = "~/Documents/methylation_pilot/joe_enrichment")
+                        output_folder = "~/Documents/methylation_pilot/joe_enrichment2")
 
-enrichment_summary(folder_path = "~/Documents/methylation_pilot/joe_enrichment",
-                   output_folder = "~/Documents/methylation_pilot/joe_enrichment")
+enrichment_summary(folder_path = "~/Documents/methylation_pilot/joe_enrichment2",
+                   output_folder = "~/Documents/methylation_pilot/joe_enrichment2")
 ```
 
