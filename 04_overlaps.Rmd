@@ -58,9 +58,9 @@ df_fig <-df |>
     `2-Hydroxyfluorene FP` = fluo2_fp,
     `2-Hydroxyfluorene MP` = fluo2_mp,
     `Mono carboxyisononyl phthalate MP` = m_cnp_mp,
-    `1-Hydroxynapthalene FP` = nap1_fp,
-    `1-Hydroxynapthalene MP` = nap1_mp,
-    `1-Hydroxynapthalene CBMC` = nap1_mom_cmbc,
+    `1-Hydroxynaphthalene FP` = nap1_fp,
+    `1-Hydroxynaphthalene MP` = nap1_mp,
+    `1-Hydroxynaphthalene CBMC` = nap1_mom_cmbc,
     `4-Hydroxyphenanthrene MP` = phen4_mp,
     `1-Hydroxypyrene  FP` = pyr1_fp,
     `1-Hydroxypyrene  MP` = pyr1_mp)|>
@@ -72,9 +72,9 @@ df_fig <-df |>
          `2-Hydroxyfluorene MP`,
          `1-Hydroxypyrene  FP`,
          `1-Hydroxypyrene  MP`,
-         `1-Hydroxynapthalene FP`,
-         `1-Hydroxynapthalene MP`,
-         `1-Hydroxynapthalene CBMC`,
+         `1-Hydroxynaphthalene FP`,
+         `1-Hydroxynaphthalene MP`,
+         `1-Hydroxynaphthalene CBMC`,
          )
 ```
 
@@ -90,9 +90,9 @@ upset(df_fig,
                "2-Hydroxyfluorene MP",
                "1-Hydroxypyrene  FP", 
                "1-Hydroxypyrene  MP",
-               "1-Hydroxynapthalene FP", 
-               "1-Hydroxynapthalene MP", 
-               "1-Hydroxynapthalene CBMC"),
+               "1-Hydroxynaphthalene FP", 
+               "1-Hydroxynaphthalene MP", 
+               "1-Hydroxynaphthalene CBMC"),
       set_size.show = TRUE,
       text.scale = 1.5, point.size = 4, line.size = 1,
       mainbar.y.max = 25,
@@ -127,9 +127,9 @@ df <- combined_data |>
                       `2-Hydroxyfluorene FP` = "fluo2_fp",
                       `2-Hydroxyfluorene MP` = "fluo2_mp",
                       `Mono carboxyisononyl phthalate MP` = "m_cnp_mp",
-                      `1-Hydroxynapthalene FP` = "nap1_fp",
-                      `1-Hydroxynapthalene MP` = "nap1_mp",
-                      `1-Hydroxynapthalene CBMC` = "nap1_mom_cmbc",
+                      `1-Hydroxynaphthalene FP` = "nap1_fp",
+                      `1-Hydroxynaphthalene MP` = "nap1_mp",
+                      `1-Hydroxynaphthalene CBMC` = "nap1_mom_cmbc",
                       `4-Hydroxyphenanthrene MP` = "phen4_mp",
                       `1-Hydroxypyrene  FP` = "pyr1_fp",
                       `1-Hydroxypyrene  MP` = "pyr1_mp"))
@@ -148,9 +148,9 @@ custom_labeller <- function(variable) {
   labels <- list(
     fluo2_fp = "2-Hydroxyfluorene FP",
     fluo2_mp = "2-Hydroxyfluorene MP",
-    nap1_fp = "1-Hydroxynapthalene FP",
-    nap1_mp = "1-Hydroxynapthalene MP",
-    nap1_mom_cmbc = "1-Hydroxynapthalene CBMC",
+    nap1_fp = "1-Hydroxynaphthalene FP",
+    nap1_mp = "1-Hydroxynaphthalene MP",
+    nap1_mom_cmbc = "1-Hydroxynaphthalene CBMC", 
     m_cnp_mp = "Mono carboxyisononyl phthalate MP",
     phen4_mp = "4-Hydroxyphenanthrene MP",
     pyr1_fp = "1-Hydroxypyrene FP",
@@ -176,9 +176,9 @@ custom_labeller <- function(variable) {
 
 #plot
 ```{r}
-ggplot(df_rest, aes(x=effect_size, y=-log10(p_value), color=beta_dir))+
+ggplot(df_nap_fluo, aes(x=effect_size, y=-log10(p_value), color=beta_dir))+
   geom_point(size=0.2)+
-  geom_text_repel(data = subset(df_rest, fdr < 0.05),
+  geom_text_repel(data = subset(df_nap_fluo, fdr < 0.05),
                   aes(label = paste(cpg_labels, paste(chr, UCSC_RefGene_Name, sep = "-"), sep = "\n")), 
                   size = 1.7,
                   min.segment.length = 0,
@@ -186,11 +186,11 @@ ggplot(df_rest, aes(x=effect_size, y=-log10(p_value), color=beta_dir))+
   scale_x_continuous(name="Adjusted beta coefficient per unit change in chemical biomarker",
                        labels=scales::comma) +
   scale_y_continuous(name="-log10(P-value)", labels=scales::comma) +
-  facet_wrap(~ factor(filename, levels=c("nap1_fp", "nap1_mp", "nap1_mom_cmbc", 
-                                         "fluo2_fp", "fluo2_mp",
-                                         "pyr1_fp", "pyr1_mp", "phen4_mp",
-                                         "m_cnp_mp", "bpa_mp")),
-             ncol=3, nrow=4, scales="free",  
+  facet_wrap(~ factor(filename, levels=c(
+    "nap1_fp", "nap1_mp", "nap1_mom_cmbc", "fluo2_fp", "fluo2_mp",
+    "pyr1_fp", "pyr1_mp", "phen4_mp","m_cnp_mp", "bpa_mp"
+    )),
+             nrow=3, ncol=3, scales="free",  
              labeller = as_labeller(custom_labeller)) +
   theme_bw() +
   theme(panel.grid.major=element_blank(),
@@ -204,7 +204,7 @@ ggplot(df_rest, aes(x=effect_size, y=-log10(p_value), color=beta_dir))+
                                   "positive-non_significant" = "grey",
                                   "negative-non_significant" = "grey"))
 
-ggsave("~/Documents/methylation_pilot/res_annotated_cell_cnt/volcano_plt_p2.tiff", 
+ggsave("~/Documents/methylation_pilot/res_annotated_cell_cnt/volcano_plt_p1.tiff", 
        width = 8, height = 10, dpi=300)
 ```
 
