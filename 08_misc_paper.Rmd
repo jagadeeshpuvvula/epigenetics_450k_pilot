@@ -158,14 +158,16 @@ vis_df |>
   geom_text(aes(label = ifelse(contains_zero, "", "x"), size = 5), show.legend = FALSE) +
   facet_grid(. ~ dna_m_smpl, scales = "free_x", space = "free_x")+
   scale_fill_gradientn(
-    colors = c("lightblue", "white", "lightpink"),
+    colors = c("lightpink", "white", "lightblue"),
     values = scales::rescale(c(min(vis_df$coef, na.rm = TRUE), 0, max(vis_df$coef, na.rm = TRUE))),
     breaks = c(min(vis_df$coef, na.rm = TRUE), 0, max(vis_df$coef, na.rm = TRUE)),
     labels = c(min(vis_df$coef, na.rm = TRUE), 0, max(vis_df$coef, na.rm = TRUE)),
-    guide = guide_colorbar(title.position = "left",
-                                              title.hjust = 1,
-                                              title.vjust = 1),
-    name = expression(beta[italic(lm)])
+    guide = guide_colorbar(
+      title = expression(beta[italic(lm)]),
+      title.position = "left",
+      title.hjust = 1,
+      title.vjust = 1
+    )
   )  +
   theme_bw() +
   labs(x = "", y = "", fill = "coefficient") +
