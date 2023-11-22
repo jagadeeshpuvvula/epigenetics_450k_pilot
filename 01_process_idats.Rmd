@@ -66,7 +66,7 @@ pacman::p_load(minfi, ENmix, IlluminaHumanMethylation450kmanifest,
 #read idats
 ```{r}
 #select one type of sample to process
-pheno_by_tiss <- pheno |> filter(sample_type == "MP")
+pheno_by_tiss <- pheno |> filter(sample_type == "CBMC")
 
 #idat file names
 idat_files<-  paste0(idats, pheno_by_tiss$gsm_id)
@@ -99,11 +99,19 @@ densityPlot(mVals, sampGroups=pheno_by_tiss$sentrix_id, main="M-values",
 
 #reference based cell count estimation from rgset for cord blood
 ```{r}
-minfi.LC<- estimateCellCounts(rgSet,compositeCellType = "CordBlood", 
-                              meanplot=TRUE, cellTypes = c("CD8T","CD4T", "NK","Bcell","Mono","Gran","nRBC"),
+rgSet <- read.metharray(basenames = idat_files) #those belong to cbmc
+
+minfi.LC<- estimateCellCounts(rgSet, compositeCellType = "CordBlood", 
+                              meanplot=TRUE, cellTypes = c("CD8T","CD4T", "NK","Bcell","Mono"),
                               returnAll = FALSE, meanPlot = TRUE, verbose = TRUE, processMethod="preprocessNoob") |>
   as.data.frame() |>
   rownames_to_column("gsm_id")
+
+#updating cell counts
+load(paste0(processed, "cbmc_processed.rda"))
+
+cbmc_pheno <- cbmc_pheno[, -c(2:8)]
+
 ```
 
 #=======================================
@@ -148,11 +156,11 @@ ref_free_cells<- as_tibble(x$Omega, rownames="gsm_id") |>
 
 #export cell type counts
 ```{r}
-mp_pheno <- right_join(cell_est, pheno_by_tiss, by = "gsm_id")
+cbmc_pheno <- right_join(minfi.LC, cbmc_pheno, by = "gsm_id")
 ```
 
 #export rda objects for downstream analysis :: file = paste0(processed, "mp_processed.rda")
 ```{r}
-save(bVals, mVals, mSetSqFlt, mp_pheno,  file = "~/Documents/methylation_pilot/fp_ref_cell_cnt/mp_processed.rda")
+save(bVals, mVals, mSetSqFlt, cbmc_pheno,  file = "~/Documents/methylation_pilot/processed/cbmc_processed.rda")
 ```
 
