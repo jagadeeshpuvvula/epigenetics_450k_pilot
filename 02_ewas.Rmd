@@ -8,22 +8,23 @@ output: pdf_document
 
 ```{r}
 library(pacman)
-pacman::p_load(tidyverse, janitor, CpGassoc, future, future.apply, appliedepi)
-processed<- "~/Documents/methylation_pilot/processed/mp_ref_cell_cnt/"
+pacman::p_load(tidyverse, janitor, CpGassoc, future, future.apply, doParallel)
+#processed<- "~/Documents/methylation_pilot/processed/mp_ref_cell_cnt/"
+processed<- "~/Documents/methylation_pilot/processed/"
 ```
 
 #CMBC analysis
 ```{r, message=FALSE, warning=FALSE}
 #load one of these files: cbmc_processed.rda; fp_processed.rda; mp_processed.rda
 
-load(paste0(processed, "mp_processed.rda"))
+load(paste0(processed, "cbmc_processed.rda"))
 dat_chem_qn <- read_csv("~/Documents/methylation_pilot/exp_processed/chem_qn_fin.csv")
 
-dat_pheno <- mp_pheno |>
+dat_pheno <- cbmc_pheno |>
   left_join(dat_chem_qn, by = "participant_id") |>
   mutate(across(where(is.character), as.factor)) |>
-  filter(if_any(22:59, ~ !is.na(.))) |>
-  mutate(across(22:59, ~ log10(. + 0.000001)))
+  filter(if_any(21:57, ~ !is.na(.))) |>
+  mutate(across(21:57, ~ log10(. + 0.000001)))
 ```
 
 #check sequence of gsm_id from preprocessed and pheno data
@@ -39,18 +40,18 @@ nCpG = dim(bVals)[1]
 
 # beta input dataset transforms into m values set in the function
 ```{r}
-#cell types for CMBC: "CD8T", "CD4T", "NK", "Bcell", "Mono", "Gran", "nRBC"
-ewas_loop_pll(exposures= c("x24_dcp", "x25_dcp", "bp_3", "bpa", "bps",
-                           "e_pb", "m_pb", "p_pb",
+#cell types for CMBC: "CD8T", "CD4T", "NK", "Bcell", "Mono"
+#cells for placenta: "cell_mp_Trophoblasts", "cell_mp_Stromal", "cell_mp_Hofbauer", "cell_mp_Endothelial", "cell_mp_nRBC"
+ewas_loop_pll(exposures= c("x24_dcp", "x25_dcp", 
+                           "bp_3",
+                           "bpa", "bps",
                            "mecptp", "mehhtp", "monp", "m_bp", "m_bz_p", "m_cnp", "m_cop", "m_ep", "mi_bp",
                            "fluo2", "nap1", "nap2", "phen1", "phen4", "phen9", "phen23", "pyr1"),
-              covariates= c("mom_age", "mom_race", "mom_edu", "pgtob", "bmi", "sex",
-                            "cell_mp_Trophoblasts", "cell_mp_Stromal", "cell_mp_Hofbauer", 
-                            "cell_mp_Endothelial", "cell_mp_nRBC"),
+              covariates= c("mom_age", "mom_race", "mom_edu", "pgtob", "bmi", "sex", "CD8T", "CD4T", "NK", "Bcell", "Mono"),
               bVals_list = list(bVals),
-              bVals_names = list("mp"),
+              bVals_names = list("cbmc"),
               dat_pheno = dat_pheno,
-              outputFolder = "~/Documents/methylation_pilot/res_cell_cnt")
+              outputFolder = "~/Documents/methylation_pilot/res_cell_cnt/cbmc_nov21_5cells")
 ```
 
 #summary
