@@ -99,8 +99,8 @@ upset(df_fig,
       text.scale = 1.5, point.size = 4, line.size = 1,
       mainbar.y.max = 25,
       set_size.scale_max = 50,
-      mainbar.y.label="No.of differentially methylated CpGs \noverlapped across chemicals",
-      sets.x.label="Total no.of CpGs \nper chemical")
+      mainbar.y.label="No.of differentially methylated CpGs \noverlapped across chemical biomarkers",
+      sets.x.label="Total no.of CpGs \nper chemical biomarker")
 
 ggsave("~/Documents/methylation_pilot/res_annotated_cell_cnt/cpg_overlap.tiff", 
        width = 10, height = 8, dpi=100)
