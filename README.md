@@ -1,5 +1,5 @@
 # Workflow environment
-R version: R version 4.2.2 (2022-10-31) 
+R version 4.2.2 (2022-10-31) 
 
 Loaded library versions:
 ggrepel : 0.9.3 
