@@ -1,0 +1,114 @@
+---
+title: "10_for_article_revision"
+author: "Puvvula"
+date: "2024-02-02"
+output: pdf_document
+---
+
+```{r}
+library(pacman)
+pacman::p_load(tidyverse, janitor, CpGassoc, future, future.apply, doParallel, reshape2)
+processed<- "~/Documents/methylation_pilot/processed/"
+```
+
+```{r}
+dat_chem_qn <- read_csv("~/Documents/methylation_pilot/exp_processed/chem_qn_fin.csv") |>
+  select(c(1,4:41)) |>
+  mutate(across(2:39, ~ log10(. + 0.000001))) |>
+  select(
+    "x24_dcp", "x25_dcp", 
+    "bp_3",
+    "bpa", "bps",
+    "mecptp", "mehhtp", "monp", "m_bp", "m_bz_p", "m_cnp", "m_cop", "m_ep", "mi_bp",
+    "fluo2", "nap1", "nap2", "phen1", "phen4", "phen9", "phen23", "pyr1"
+  ) |>
+  rename(
+    `2,4-dichlorophenol` = x24_dcp,
+    `2,5-dichlorophenol` = x25_dcp,
+    `Benzophenone-3` = bp_3,
+    `Bisphenol-A` = bpa,
+    `Bisphenol-S` = bps,
+    `Mono-2-ethyl-5-carboxypentyl terephthalate` = mecptp,
+    `Mono-2-ethyl-5-hydrohexyl terephthalate` = mehhtp,
+    `Monooxononyl phthalate` = monp,
+    `Mono-n-butyl phthalate` = m_bp,
+    `Monobenzyl phthalate` = m_bz_p,
+    `Mono carboxyisononyl phthalate` = m_cnp,
+    `Mono carboxyisooctyl phthalate` = m_cop,
+    `Monoethyl phthalate` = m_ep,
+    `Mono-isobutyl phthalate` = mi_bp,
+    `2-Hydroxyfluorene` = fluo2,
+    `1-Hydroxynaphthalene` = nap1,
+    `2-Hydroxynaphthalene` = nap2,
+    `1-Hydroxyphenanthrene` = phen1,
+    `2,3-Hydroxyphenanthrene` = phen23,
+    `4-Hydroxyphenanthrene` = phen4,
+    `9-Hydroxyphenanthrene` = phen9,
+    `1-Hydroxypyrene` = pyr1
+  )
+```
+
+```{r}
+desired_order<- c('2,4-dichlorophenol',
+'2,5-dichlorophenol',
+'Benzophenone-3',
+'Bisphenol-A',
+'Bisphenol-S',
+'Mono-2-ethyl-5-carboxypentyl terephthalate',
+'Mono-2-ethyl-5-hydrohexyl terephthalate',
+'Monooxononyl phthalate',
+'Mono-n-butyl phthalate',
+'Monobenzyl phthalate',
+'Mono carboxyisononyl phthalate',
+'Mono carboxyisooctyl phthalate',
+'Monoethyl phthalate',
+'Mono-isobutyl phthalate',
+'2-Hydroxyfluorene',
+'1-Hydroxynaphthalene',
+'2-Hydroxynaphthalene',
+'1-Hydroxyphenanthrene',
+'2,3-Hydroxyphenanthrene',
+'4-Hydroxyphenanthrene',
+'9-Hydroxyphenanthrene',
+'1-Hydroxypyrene'
+)
+```
+
+
+```{r}
+cormat <- round(x=cor(dat_chem_qn, method = "spearman", use = "complete.obs"), digits = 2) |>
+  melt() |> 
+  clean_names() |>
+  mutate_at(vars(var1, var2), ~str_replace_all(., "_(?=[A-Z])", " ")) |>
+  mutate_at(vars(var1, var2), ~factor(., levels = desired_order))
+```
+
+```{r}
+ggplot(cormat, aes(x = var2, y = var1, fill = value, label = value)) + #, 
+  geom_tile(color = "white") +
+  geom_text(color = "black", size = 3, vjust = 1) +
+  scale_fill_gradient2(low = "#D55E00", high = "#0072B2", mid = "white",
+                       midpoint = 0,
+                       limit = c(-1, 1), space = "Lab",
+                       name = "Spearman Correlation coefficient") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, size = 11, hjust = 1),
+        axis.text.y = element_text(angle = 0, vjust = 0.5, size = 11, hjust = 1),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank(),
+        axis.ticks = element_blank(),
+        legend.position = "bottom", legend.box = "horizontal") +
+  coord_fixed() +
+  # add vertical and horizontal lines to separate variable groups
+  geom_vline(xintercept = c(0, 5.5, 14.5, 22.5), color = "black", size=1.25) +
+  geom_hline(yintercept = c(0, 5.5, 14.5, 22.5), color = "black", size=1.25) 
+```
+
+```{r}
+ggsave("~/Documents/methylation_pilot/chem_correlations.tiff",
+       width = 10, height = 10, dpi=300)
+```
+
