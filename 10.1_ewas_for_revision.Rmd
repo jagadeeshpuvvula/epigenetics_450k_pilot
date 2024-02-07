@@ -1,0 +1,181 @@
+---
+title: "10.1_ewas_for_revision"
+author: "Puvvula"
+date: "2024-02-06"
+output: pdf_document
+---
+
+```{r}
+library(pacman)
+pacman::p_load(tidyverse, janitor, CpGassoc, future, future.apply, doParallel)
+#processed<- "~/Documents/methylation_pilot/processed/mp_ref_cell_cnt/"
+processed<- "~/Documents/methylation_pilot/processed/"
+```
+
+```{r}
+dat_chem_qn <- read_csv("~/Documents/methylation_pilot/exp_processed/chem_qn_fin.csv") |>
+  select(c("participant_id" , 
+           "bpf",
+           "b_pb",
+           "m_cpp", 
+           "m_hi_nch", "mcoch",
+           "tcc", "tcs",
+           "mom_age", "mom_race", "mom_edu", "pgtob", "bmi", "sex")) |>
+  mutate(tcc = if_else(tcc < 0.1, 1, 2),
+         tcs = if_else(tcs < 1.7, 1, 2),
+         bpf = if_else(bpf < 0.2, 1, 2),
+         b_pb = if_else(b_pb < 0.1, 1, 2),
+         m_cpp = if_else(m_cpp < 0.4, 1, 2),
+         mcoch = if_else(mcoch < 0.2, 1, 2),
+         m_hi_nch = if_else(m_hi_nch < 0.4, 1, 2)) |>
+  mutate_at(vars(2:8), as.factor)
+```
+
+
+#CMBC analysis
+```{r, message=FALSE, warning=FALSE}
+#load one of these files: cbmc_processed.rda; fp_processed.rda; mp_processed.rda
+
+load(paste0(processed, "fp_processed.rda"))
+
+dat_pheno <- fp_pheno |>
+  left_join(dat_chem_qn, by = "participant_id") |>
+  mutate(across(where(is.character), as.factor)) 
+```
+
+#check sequence of gsm_id from preprocessed and pheno data
+```{r}
+bVals <- bVals[, match(dat_pheno$gsm_id, colnames(bVals)), drop = FALSE]
+mVals <- mVals[, match(dat_pheno$gsm_id, colnames(mVals)), drop = FALSE]
+
+setdiff(dat_pheno$gsm_id, colnames(bVals))
+setdiff(dat_pheno$gsm_id, colnames(mVals))
+
+nCpG = dim(bVals)[1]
+```
+
+# beta input dataset transforms into m values set in the function
+```{r}
+#cell types for CMBC: "CD8T", "CD4T", "NK", "Bcell", "Mono"
+#cells for placenta: "cell_mp_Trophoblasts", "cell_mp_Stromal", "cell_mp_Hofbauer", "cell_mp_Endothelial", "cell_mp_nRBC"
+
+ewas_loop_pll(exposures= c("bpf",
+                           "b_pb",
+                           "m_cpp", 
+                           "m_hi_nch", "mcoch",
+                           "tcc", "tcs"), 
+              covariates= c("mom_age", "mom_race", "mom_edu", "pgtob", "bmi", 
+                            "cell_fp_Trophoblasts", "cell_fp_Stromal", "cell_fp_Hofbauer", "cell_fp_Endothelial",
+                            "cell_fp_nRBC"),
+              bVals_list = list(bVals),
+              bVals_names = list("fp"),
+              dat_pheno = dat_pheno,
+              outputFolder = "~/Documents/methylation_pilot/for_peer_review")
+```
+
+#summary
+```{r}  
+summary_result <- ewas_summary("~/Documents/methylation_pilot/for_peer_review")
+```
+
+
+#for manhattan and volcano plot
+```{r}
+library(IlluminaHumanMethylation450kanno.ilmn12.hg19)
+ann450k <- getAnnotation(IlluminaHumanMethylation450kanno.ilmn12.hg19) |> 
+  as.data.frame() |>
+  select(c("UCSC_RefGene_Name","UCSC_RefGene_Group","Relation_to_Island","chr","pos")) |>
+  rownames_to_column(var = "cpg_labels")
+```
+
+
+#add annotation information to select ewas output files
+```{r}
+annotate_and_save(file_names = c("df_manhat_m_cpp_fp.csv",
+                                 "df_manhat_m_cpp_mp.csv"),
+                  input_folder = "~/Documents/methylation_pilot/for_peer_review",
+                  output_folder = "~/Documents/methylation_pilot/for_peer_review/res_annotated_cell_cnt")
+```
+
+#performing gene enrichment analysis using KEGG database
+```{r}
+perform_gene_enrichment(input_folder = "~/Documents/methylation_pilot/for_peer_review/res_annotated_cell_cnt",
+                        output_folder = "~/Documents/methylation_pilot/for_peer_review/res_annotated_cell_cnt")
+
+joe_gene_enrichment(input_folder = "~/Documents/methylation_pilot/for_peer_review/res_annotated_cell_cnt",
+                        output_folder = "~/Documents/methylation_pilot/for_peer_review/res_annotated_cell_cnt/joe_enrichment")
+```
+
+
+#####################
+
+# Define a function to read a CSV file and return it as a tibble
+```{r}
+read_csv_as_tibble <- function(file_path) {
+  read_csv(file_path)
+}
+```
+
+# List all CSV files in a directory and combine them into a tibble
+```{r}
+combined_data <- list.files(path = "~/Documents/methylation_pilot/for_peer_review/res_annotated_cell_cnt/annotated", 
+                            pattern = "\\.csv$", full.names = TRUE) |>
+  map_dfr(~ {
+    read_csv_as_tibble(.) |>
+      mutate(
+        filename = gsub("^.*/|\\.csv$|^anno_df_manhat_", "", basename(.))
+      )
+  })
+```
+
+#count frequency of cpgs and genes for text
+```{r}
+summary_df <- df |>
+  filter(fdr<0.05,
+         str_detect(UCSC_RefGene_Group, "TSS")) |>
+  group_by(tissue,UCSC_RefGene_Name, UCSC_RefGene_Group) |>
+  summarise(
+    n = n(),
+    distinct_cpg_labels = toString(unique(cpg_labels)),
+    num_unique_cpg_labels = length(unique(cpg_labels)),
+    distinct_chemicals = toString(unique(chemical))
+  ) |>
+  ungroup() |>
+  filter(UCSC_RefGene_Name != "NA")
+```
+
+#export statistically significant ANOVA results (raw p-value<0.05 not fdr) - for supplement
+```{r}
+anova_df<- combined_data |>
+  filter(p_value<0.05) |>
+  mutate(methylation_source = case_when(
+    str_sub(filename, nchar(filename) - 1) == "fp" ~ "fetal placenta",
+    str_sub(filename, nchar(filename) - 1) == "mp" ~ "maternal placenta",
+    TRUE ~ "other"
+  )) |>
+  mutate(chemical_biomarker = "Mono carboxyisononyl phthalate") |>
+  select(-c(filename))
+
+write_csv(anova_df, "~/Documents/methylation_pilot/for_peer_review/export_ewas_results/anova.csv")
+```
+
+#export statistically significant (raw p-value < 0.05 not the fdr) linear regression results - for supplement
+```{r}
+lm_res<- df |>
+  mutate(chemical_biomarker = recode(chemical,
+                            "bpa" = "Bisphenol-A",
+                            "fluo2" = "2-Hydroxyfluorene",
+                            "m_cnp" = "Mono carboxyisononyl phthalate",
+                            "nap1" = "1-Hydroxynaphthalene",
+                            "phen4" = "4-Hydroxyphenanthrene",
+                            "pyr1" = "1-Hydroxypyrene",
+                            "e_pb" = "Ethyl paraben"))|>
+  mutate(methylation_source = recode(tissue, 
+                                     "cmbc" = "Cord blood mono nuclear cells",
+                                     "fp" = "fetal placenta",
+                                     "mp" = "maternal placenta")) |>
+  select(-c(filename, chemical, tissue))
+
+write_csv(lm_res, "~/Documents/methylation_pilot/for_peer_review/export_ewas_results/lm_res.csv")
+```
+
