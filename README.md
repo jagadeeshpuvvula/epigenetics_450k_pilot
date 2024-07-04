@@ -1,4 +1,4 @@
-# Cite: Puvvula, J., Braun, J.M., DeFranco, E.A. et al. Gestational exposure to environmental chemicals and epigenetic alterations in the placenta and cord blood mononuclear cells. Epigenetics Commun. 4, 4 (2024). https://doi.org/10.1186/s43682-024-00027-7
+# Cite: Puvvula J, Braun JM, DeFranco EA, Ho SM, Leung YK, Huang S, Zhang X, Vuong AM, Kim SS, Percy Z, Calafat AM, Botelho JC, Chen A. Gestational exposure to environmental chemicals and epigenetic alterations in the placenta and cord blood mononuclear cells. Epigenetics Commun. 2024;4(1):4. doi: 10.1186/s43682-024-00027-7. Epub 2024 Jun 30. PMID: 38962689; PMCID: PMC11217138.
 
 # Methylation data available at GSE269983
 
